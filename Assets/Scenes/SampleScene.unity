@@ -169,6 +169,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   rotateCannon: 0
   moveUpDown: 0
+  moveLeftRight: 0
   isFinalCannon: 0
   entryPoint: {fileID: 1900182729}
   exitPoint: {fileID: 1264965687}
@@ -178,6 +179,10 @@ MonoBehaviour:
   minY: -5
   maxY: 5
   startMovingUp: 1
+  horizontalMoveSpeed: 2
+  minX: -2
+  maxX: 2
+  startMovingRight: 1
   finalLaunchSpeed: 45
   aimRadius: 1.5
   cannonVisual: {fileID: 73650873}
@@ -194,6 +199,11 @@ MonoBehaviour:
   squashAmount: 0.65
   stretchAmount: 1.18
   recoilSnap: 1.15
+  launchParticleEffect: {fileID: 198382322271236730, guid: b287b69cd25b44f4fafc46daddba9419, type: 3}
+  particleXOffset: -0.35
+  particleYOffset: 0
+  particleZOffset: 0
+  particleLifetime: 2
 --- !u!23 &73650871
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -251,8 +261,8 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 73650868}
-  m_LocalRotation: {x: 0.7071068, y: 0, z: 0, w: 0.7071068}
-  m_LocalPosition: {x: 13.284, y: -0.3066, z: 0.682}
+  m_LocalRotation: {x: 0.6852178, y: -0.17457543, z: -0.17457543, w: 0.6852178}
+  m_LocalPosition: {x: 11.626239, y: 5.6837273, z: 0.682}
   m_LocalScale: {x: 19.234787, y: 19.234787, z: 19.234787}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -260,7 +270,115 @@ Transform:
   - {fileID: 1264965687}
   m_Father: {fileID: 0}
   m_RootOrder: 7
-  m_LocalEulerAnglesHint: {x: 90, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 61.413, y: -90, z: -90}
+--- !u!1 &387545097
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 387545098}
+  - component: {fileID: 387545100}
+  - component: {fileID: 387545099}
+  m_Layer: 6
+  m_Name: Exit
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &387545098
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 387545097}
+  m_LocalRotation: {x: 0, y: 0.7071068, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: 0.042198572, y: -0.00039626515, z: 0.000011607992}
+  m_LocalScale: {x: 0.03300399, y: 0.0447733, z: 0.060735583}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2101630844}
+  m_RootOrder: 1
+  m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
+--- !u!65 &387545099
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 387545097}
+  m_Material: {fileID: 0}
+  m_IsTrigger: 0
+  m_Enabled: 0
+  serializedVersion: 2
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!33 &387545100
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 387545097}
+  m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &404114618
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 404114619}
+  - component: {fileID: 404114621}
+  - component: {fileID: 404114620}
+  m_Layer: 6
+  m_Name: Entry
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &404114619
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 404114618}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.0174, y: -0.0022041197, z: 0.00030187314}
+  m_LocalScale: {x: 0.04478149, y: 0.044773284, z: 0.044762198}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2101630844}
+  m_RootOrder: 0
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &404114620
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 404114618}
+  m_Material: {fileID: 0}
+  m_IsTrigger: 0
+  m_Enabled: 0
+  serializedVersion: 2
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!33 &404114621
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 404114618}
+  m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
 --- !u!1 &464408605
 GameObject:
   m_ObjectHideFlags: 0
@@ -669,8 +787,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4f6f14457e040334ba34819e6c7192b5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  rotateCannon: 1
+  rotateCannon: 0
   moveUpDown: 0
+  moveLeftRight: 0
   isFinalCannon: 0
   entryPoint: {fileID: 914058321}
   exitPoint: {fileID: 1613875776}
@@ -680,6 +799,10 @@ MonoBehaviour:
   minY: -2
   maxY: 2
   startMovingUp: 1
+  horizontalMoveSpeed: 2
+  minX: -2
+  maxX: 2
+  startMovingRight: 1
   finalLaunchSpeed: 45
   aimRadius: 3.03
   cannonVisual: {fileID: 698256691}
@@ -696,6 +819,11 @@ MonoBehaviour:
   squashAmount: 0.65
   stretchAmount: 1.18
   recoilSnap: 1.15
+  launchParticleEffect: {fileID: 198382322271236730, guid: b287b69cd25b44f4fafc46daddba9419, type: 3}
+  particleXOffset: -0.35
+  particleYOffset: 0
+  particleZOffset: 0
+  particleLifetime: 2
 --- !u!23 &698256689
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -1483,6 +1611,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   rotateCannon: 0
   moveUpDown: 1
+  moveLeftRight: 0
   isFinalCannon: 0
   entryPoint: {fileID: 1329658266}
   exitPoint: {fileID: 1392179157}
@@ -1492,6 +1621,10 @@ MonoBehaviour:
   minY: -3
   maxY: 3
   startMovingUp: 1
+  horizontalMoveSpeed: 2
+  minX: -2
+  maxX: 2
+  startMovingRight: 1
   finalLaunchSpeed: 45
   aimRadius: 1.5
   cannonVisual: {fileID: 1314207848}
@@ -1508,6 +1641,11 @@ MonoBehaviour:
   squashAmount: 0.65
   stretchAmount: 1.18
   recoilSnap: 1.15
+  launchParticleEffect: {fileID: 198382322271236730, guid: b287b69cd25b44f4fafc46daddba9419, type: 3}
+  particleXOffset: -0.35
+  particleYOffset: 0
+  particleZOffset: 0
+  particleLifetime: 2
 --- !u!23 &1314207846
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -1566,7 +1704,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1314207843}
   m_LocalRotation: {x: 0.70710677, y: 0, z: 0, w: 0.70710677}
-  m_LocalPosition: {x: 23.03, y: -0.40486124, z: 0.682}
+  m_LocalPosition: {x: 19.98, y: -0.40486124, z: 0.682}
   m_LocalScale: {x: 19.234787, y: 19.234787, z: 19.234787}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -1784,7 +1922,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   rotateCannon: 0
   moveUpDown: 0
-  isFinalCannon: 1
+  moveLeftRight: 1
+  isFinalCannon: 0
   entryPoint: {fileID: 688366933}
   exitPoint: {fileID: 1828600610}
   launchSpeed: 35
@@ -1793,6 +1932,10 @@ MonoBehaviour:
   minY: -2
   maxY: 2
   startMovingUp: 1
+  horizontalMoveSpeed: 4
+  minX: -4
+  maxX: 4
+  startMovingRight: 1
   finalLaunchSpeed: 45
   aimRadius: 1.5
   cannonVisual: {fileID: 1637856653}
@@ -1809,6 +1952,11 @@ MonoBehaviour:
   squashAmount: 0.65
   stretchAmount: 1.18
   recoilSnap: 1.15
+  launchParticleEffect: {fileID: 198382322271236730, guid: b287b69cd25b44f4fafc46daddba9419, type: 3}
+  particleXOffset: -0.35
+  particleYOffset: 0
+  particleZOffset: 0
+  particleLifetime: 2
 --- !u!23 &1637856651
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -1866,8 +2014,8 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1637856648}
-  m_LocalRotation: {x: 0.7071068, y: 0, z: 0, w: 0.7071068}
-  m_LocalPosition: {x: 29.13, y: 1.1, z: 0.682}
+  m_LocalRotation: {x: 0.5, y: 0.5, z: 0.5, w: 0.5}
+  m_LocalPosition: {x: 29.258558, y: 0.96689636, z: 0.682}
   m_LocalScale: {x: 19.234787, y: 19.234787, z: 19.234787}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -1875,7 +2023,7 @@ Transform:
   - {fileID: 1828600610}
   m_Father: {fileID: 0}
   m_RootOrder: 9
-  m_LocalEulerAnglesHint: {x: 90, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 90, z: 90}
 --- !u!1 &1710852254
 GameObject:
   m_ObjectHideFlags: 0
@@ -2399,6 +2547,155 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 727.9937, y: 136.4988}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!1 &2101630839
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2101630844}
+  - component: {fileID: 2101630843}
+  - component: {fileID: 2101630842}
+  - component: {fileID: 2101630841}
+  - component: {fileID: 2101630840}
+  m_Layer: 0
+  m_Name: Cannon (5)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!65 &2101630840
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2101630839}
+  m_Material: {fileID: 0}
+  m_IsTrigger: 0
+  m_Enabled: 1
+  serializedVersion: 2
+  m_Size: {x: 0.12244354, y: 0.09567051, z: 0.09567053}
+  m_Center: {x: 0.0025038496, y: 0.00000009313228, z: 0.00000007636847}
+--- !u!114 &2101630841
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2101630839}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4f6f14457e040334ba34819e6c7192b5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  rotateCannon: 0
+  moveUpDown: 1
+  moveLeftRight: 0
+  isFinalCannon: 0
+  entryPoint: {fileID: 404114619}
+  exitPoint: {fileID: 387545098}
+  launchSpeed: 35
+  rotateSpeed: 90
+  moveSpeed: 5
+  minY: -3
+  maxY: 3
+  startMovingUp: 1
+  horizontalMoveSpeed: 2
+  minX: -2
+  maxX: 2
+  startMovingRight: 1
+  finalLaunchSpeed: 45
+  aimRadius: 1.5
+  cannonVisual: {fileID: 2101630844}
+  entryRecoilDistance: 0.25
+  entrySquashAmount: 0.78
+  entryStretchAmount: 1.08
+  entrySquashDuration: 0.045
+  entryStretchDuration: 0.08
+  entryReturnDuration: 0.1
+  recoilDistance: 0.25
+  squashDuration: 0.055
+  stretchDuration: 0.1
+  returnDuration: 0.12
+  squashAmount: 0.65
+  stretchAmount: 1.18
+  recoilSnap: 1.15
+  launchParticleEffect: {fileID: 198382322271236730, guid: b287b69cd25b44f4fafc46daddba9419, type: 3}
+  particleXOffset: -0.35
+  particleYOffset: 0
+  particleZOffset: 0
+  particleLifetime: 2
+--- !u!23 &2101630842
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2101630839}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: 15e12cd8c943c5943ab45dad1351dd07, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_AdditionalVertexStreams: {fileID: 0}
+--- !u!33 &2101630843
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2101630839}
+  m_Mesh: {fileID: 3321949837259231844, guid: 5c68d060acde69f4884db0aedfcc27de, type: 3}
+--- !u!4 &2101630844
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2101630839}
+  m_LocalRotation: {x: 0.70710677, y: 0, z: 0, w: 0.70710677}
+  m_LocalPosition: {x: 32.21, y: 9.12, z: 0.682}
+  m_LocalScale: {x: 19.234787, y: 19.234787, z: 19.234787}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 404114619}
+  - {fileID: 387545098}
+  m_Father: {fileID: 0}
+  m_RootOrder: 15
+  m_LocalEulerAnglesHint: {x: 90, y: 90, z: 90}
 --- !u!1 &53833959737085550
 GameObject:
   m_ObjectHideFlags: 0
@@ -3854,6 +4151,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   rotateCannon: 0
   moveUpDown: 0
+  moveLeftRight: 0
   isFinalCannon: 0
   entryPoint: {fileID: 1034251659}
   exitPoint: {fileID: 1944808705}
@@ -3863,6 +4161,10 @@ MonoBehaviour:
   minY: -2
   maxY: 2
   startMovingUp: 1
+  horizontalMoveSpeed: 2
+  minX: -2
+  maxX: 2
+  startMovingRight: 1
   finalLaunchSpeed: 45
   aimRadius: 1.5
   cannonVisual: {fileID: 7405511217848280873}
@@ -3879,6 +4181,11 @@ MonoBehaviour:
   squashAmount: 0.65
   stretchAmount: 1.18
   recoilSnap: 1.15
+  launchParticleEffect: {fileID: 198382322271236730, guid: b287b69cd25b44f4fafc46daddba9419, type: 3}
+  particleXOffset: -0.35
+  particleYOffset: 0
+  particleZOffset: 0
+  particleLifetime: 2
 --- !u!65 &8542912791225015368
 BoxCollider:
   m_ObjectHideFlags: 0
