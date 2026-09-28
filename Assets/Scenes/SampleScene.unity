@@ -26,7 +26,7 @@ RenderSettings:
   m_AmbientIntensity: 1
   m_AmbientMode: 0
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
-  m_SkyboxMaterial: {fileID: 10304, guid: 0000000000000000f000000000000000, type: 0}
+  m_SkyboxMaterial: {fileID: 2100000, guid: a61a5b78139e36e4e9fbac68ba4a5bcd, type: 2}
   m_HaloStrength: 0.5
   m_FlareStrength: 1
   m_FlareFadeSpeed: 3
@@ -2232,6 +2232,10 @@ MonoBehaviour:
   flightSpeed: 18
   visualModel: {fileID: 0}
   visualSpinSpeed: 720
+  obstacleBounceForce: 4
+  obstacleForwardForce: 2
+  obstacleGravity: 20
+  obstacleSeparation: 0.05
 --- !u!54 &1987193094
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -3710,6 +3714,10 @@ MonoBehaviour:
   flightSpeed: 18
   visualModel: {fileID: 1882658446072611876}
   visualSpinSpeed: 50
+  obstacleBounceForce: 4
+  obstacleForwardForce: 2
+  obstacleGravity: 20
+  obstacleSeparation: 0.05
 --- !u!1 &7931834499739970042
 GameObject:
   m_ObjectHideFlags: 0
