@@ -11,6 +11,9 @@ public class BulletCannon : MonoBehaviour
     [Tooltip("Enable for an up/down moving cannon.")]
     [SerializeField] private bool moveUpDown = false;
 
+    [Tooltip("Enable for a left/right moving cannon.")]
+    [SerializeField] private bool moveLeftRight = false;
+
     [Tooltip("Enable only on the final cannon.")]
     [SerializeField] private bool isFinalCannon = false;
 
@@ -41,6 +44,20 @@ public class BulletCannon : MonoBehaviour
 
     [Tooltip("Start by moving upward.")]
     [SerializeField] private bool startMovingUp = true;
+
+
+    [Header("Left / Right Movement")]
+    [Tooltip("Horizontal movement speed.")]
+    [SerializeField] private float horizontalMoveSpeed = 2f;
+
+    [Tooltip("Minimum local X position relative to starting position.")]
+    [SerializeField] private float minX = -2f;
+
+    [Tooltip("Maximum local X position relative to starting position.")]
+    [SerializeField] private float maxX = 2f;
+
+    [Tooltip("Start by moving toward positive X / right.")]
+    [SerializeField] private bool startMovingRight = true;
 
 
     [Header("Final Cannon")]
@@ -100,38 +117,99 @@ public class BulletCannon : MonoBehaviour
     [SerializeField] private float recoilSnap = 1.15f;
 
 
+    // =========================================================
+    // LAUNCH PARTICLE EFFECT
+    // =========================================================
+
+    [Header("Launch Particle Effect")]
+    [Tooltip("Particle effect prefab spawned inside the cannon when the player is launched.")]
+    [SerializeField] private ParticleSystem launchParticleEffect;
+
+    [Tooltip("Local X position offset from the entry point. Negative values move the effect backward on X.")]
+    [SerializeField] private float particleXOffset = -0.35f;
+
+    [Tooltip("Local Y position offset from the entry point.")]
+    [SerializeField] private float particleYOffset = 0f;
+
+    [Tooltip("Local Z position offset from the entry point.")]
+    [SerializeField] private float particleZOffset = 0f;
+
+    [Tooltip("Destroy the spawned particle object after this many seconds.")]
+    [SerializeField] private float particleLifetime = 2f;
+
+
+    // =========================================================
+    // PRIVATE VARIABLES
+    // =========================================================
+
     private BulletBoyPlayer player;
 
     private float currentX;
     private float lockedY;
     private float lockedZ;
 
+    // Up / Down
     private float startingY;
     private bool movingUp;
 
+    // Left / Right
+    private float startingX;
+    private bool movingRight;
+
+    // Visual effect
     private Vector3 originalVisualPosition;
     private Vector3 originalVisualScale;
 
     private Coroutine effectCoroutine;
 
 
+    // =========================================================
+    // AWAKE
+    // =========================================================
+
     private void Awake()
     {
-        Vector3 startingRotation = transform.localEulerAngles;
+        Vector3 startingRotation =
+            transform.localEulerAngles;
+
 
         currentX = startingRotation.x;
         lockedY = startingRotation.y;
         lockedZ = startingRotation.z;
 
-        startingY = transform.localPosition.y;
-        movingUp = startMovingUp;
 
+        // -----------------------------------------------------
+        // UP / DOWN
+        // -----------------------------------------------------
+
+        startingY =
+            transform.localPosition.y;
+
+        movingUp =
+            startMovingUp;
+
+
+        // -----------------------------------------------------
+        // LEFT / RIGHT
+        // -----------------------------------------------------
+
+        startingX =
+            transform.localPosition.x;
+
+        movingRight =
+            startMovingRight;
+
+
+        // -----------------------------------------------------
+        // CANNON VISUAL
+        // -----------------------------------------------------
 
         // If no visual is assigned,
         // use the cannon itself.
         if (cannonVisual == null)
         {
-            cannonVisual = transform;
+            cannonVisual =
+                transform;
         }
 
 
@@ -143,19 +221,31 @@ public class BulletCannon : MonoBehaviour
     }
 
 
+    // =========================================================
+    // START
+    // =========================================================
+
     private void Start()
     {
         ApplyRotation();
     }
 
 
+    // =========================================================
+    // UPDATE
+    // =========================================================
+
     private void Update()
     {
         UpdateRotation();
+
         UpdateVerticalMovement();
 
+        UpdateHorizontalMovement();
 
-        if (player != null && player.IsInsideCannon())
+
+        if (player != null &&
+            player.IsInsideCannon())
         {
             player.SyncWithCannon(
                 entryPoint,
@@ -229,17 +319,25 @@ public class BulletCannon : MonoBehaviour
             Time.deltaTime;
 
 
+        // Reached top.
         if (newY >= startingY + maxY)
         {
-            newY = startingY + maxY;
-            movingUp = false;
+            newY =
+                startingY + maxY;
+
+            movingUp =
+                false;
         }
 
 
+        // Reached bottom.
         if (newY <= startingY + minY)
         {
-            newY = startingY + minY;
-            movingUp = true;
+            newY =
+                startingY + minY;
+
+            movingUp =
+                true;
         }
 
 
@@ -247,7 +345,72 @@ public class BulletCannon : MonoBehaviour
             transform.localPosition;
 
 
-        position.y = newY;
+        position.y =
+            newY;
+
+
+        transform.localPosition =
+            position;
+    }
+
+
+    // =========================================================
+    // LEFT / RIGHT MOVEMENT
+    // =========================================================
+
+    private void UpdateHorizontalMovement()
+    {
+        if (!moveLeftRight)
+        {
+            return;
+        }
+
+
+        float direction =
+            movingRight ? 1f : -1f;
+
+
+        float newX =
+            transform.localPosition.x +
+            direction *
+            horizontalMoveSpeed *
+            Time.deltaTime;
+
+
+        // -----------------------------------------------------
+        // Reached right limit.
+        // -----------------------------------------------------
+
+        if (newX >= startingX + maxX)
+        {
+            newX =
+                startingX + maxX;
+
+            movingRight =
+                false;
+        }
+
+
+        // -----------------------------------------------------
+        // Reached left limit.
+        // -----------------------------------------------------
+
+        if (newX <= startingX + minX)
+        {
+            newX =
+                startingX + minX;
+
+            movingRight =
+                true;
+        }
+
+
+        Vector3 position =
+            transform.localPosition;
+
+
+        position.x =
+            newX;
 
 
         transform.localPosition =
@@ -290,7 +453,8 @@ public class BulletCannon : MonoBehaviour
         }
 
 
-        player = bulletPlayer;
+        player =
+            bulletPlayer;
 
 
         player.EnterCannon(
@@ -356,6 +520,13 @@ public class BulletCannon : MonoBehaviour
 
 
         // =====================================================
+        // SPAWN LAUNCH PARTICLE
+        // =====================================================
+
+        SpawnLaunchParticle();
+
+
+        // =====================================================
         // PLAYER LAUNCH EFFECT
         // =====================================================
 
@@ -371,6 +542,74 @@ public class BulletCannon : MonoBehaviour
 
 
         player = null;
+    }
+
+
+    // =========================================================
+    // SPAWN LAUNCH PARTICLE
+    // =========================================================
+
+    private void SpawnLaunchParticle()
+    {
+        if (launchParticleEffect == null)
+        {
+            return;
+        }
+
+
+        if (entryPoint == null)
+        {
+            return;
+        }
+
+
+        // -----------------------------------------------------
+        // Position relative to Entry Point.
+        //
+        // Negative X = backward
+        // Positive X = forward
+        // -----------------------------------------------------
+
+        Vector3 localOffset =
+            new Vector3(
+                particleXOffset,
+                particleYOffset,
+                particleZOffset
+            );
+
+
+        Vector3 spawnPosition =
+            entryPoint.TransformPoint(
+                localOffset
+            );
+
+
+        Quaternion spawnRotation =
+            entryPoint.rotation;
+
+
+        ParticleSystem spawnedParticle =
+            Instantiate(
+                launchParticleEffect,
+                spawnPosition,
+                spawnRotation
+            );
+
+
+        // Make particle follow cannon.
+        spawnedParticle.transform.SetParent(
+            transform,
+            true
+        );
+
+
+        spawnedParticle.Play();
+
+
+        Destroy(
+            spawnedParticle.gameObject,
+            particleLifetime
+        );
     }
 
 
@@ -431,7 +670,9 @@ public class BulletCannon : MonoBehaviour
 
         if (effectCoroutine != null)
         {
-            StopCoroutine(effectCoroutine);
+            StopCoroutine(
+                effectCoroutine
+            );
         }
 
 
@@ -498,7 +739,8 @@ public class BulletCannon : MonoBehaviour
             squash;
 
 
-        float elapsed = 0f;
+        float elapsed =
+            0f;
 
 
         while (elapsed < squashTime)
@@ -514,7 +756,7 @@ public class BulletCannon : MonoBehaviour
                 );
 
 
-            // Fast punch into the squash.
+            // Fast punch into squash.
             float smoothT =
                 1f -
                 Mathf.Pow(
@@ -563,7 +805,8 @@ public class BulletCannon : MonoBehaviour
             stretch;
 
 
-        elapsed = 0f;
+        elapsed =
+            0f;
 
 
         while (elapsed < stretchTime)
@@ -618,7 +861,8 @@ public class BulletCannon : MonoBehaviour
         // 3. RETURN TO NORMAL
         // -----------------------------------------------------
 
-        elapsed = 0f;
+        elapsed =
+            0f;
 
 
         while (elapsed < returnTime)
@@ -670,7 +914,8 @@ public class BulletCannon : MonoBehaviour
             originalVisualScale;
 
 
-        effectCoroutine = null;
+        effectCoroutine =
+            null;
     }
 
 
@@ -722,6 +967,12 @@ public class BulletCannon : MonoBehaviour
     public bool IsMovingUpDown()
     {
         return moveUpDown;
+    }
+
+
+    public bool IsMovingLeftRight()
+    {
+        return moveLeftRight;
     }
 
 
