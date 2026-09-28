@@ -23,6 +23,24 @@ public class BulletBoyPlayer : MonoBehaviour
     private float visualSpinSpeed = 720f;
 
 
+    [Header("Obstacle Hit Physics")]
+    [Tooltip("How strongly the player is pushed away from the obstacle.")]
+    [SerializeField]
+    private float obstacleBounceForce = 4f;
+
+    [Tooltip("Additional forward momentum after hitting an obstacle.")]
+    [SerializeField]
+    private float obstacleForwardForce = 2f;
+
+    [Tooltip("Gravity strength used when falling after hitting an obstacle.")]
+    [SerializeField]
+    private float obstacleGravity = 20f;
+
+    [Tooltip("Small position offset used to prevent the player from sticking inside the collider.")]
+    [SerializeField]
+    private float obstacleSeparation = 0.05f;
+
+
     private Rigidbody rb;
 
     private bool isInsideCannon;
@@ -91,6 +109,30 @@ public class BulletBoyPlayer : MonoBehaviour
         if (isFlying)
         {
             UpdateFlight();
+        }
+    }
+
+
+    // =========================================================
+    // FIXED UPDATE
+    // =========================================================
+
+    private void FixedUpdate()
+    {
+        /*
+         * When the player has fallen after
+         * hitting an obstacle, use custom gravity.
+         */
+
+        if (!isFlying &&
+            !isInsideCannon &&
+            !rb.isKinematic)
+        {
+            rb.AddForce(
+                Vector3.down *
+                obstacleGravity,
+                ForceMode.Acceleration
+            );
         }
     }
 
@@ -256,6 +298,8 @@ public class BulletBoyPlayer : MonoBehaviour
         rb.angularVelocity =
             Vector3.zero;
 
+        rb.useGravity = false;
+
         rb.isKinematic = true;
 
 
@@ -393,7 +437,19 @@ public class BulletBoyPlayer : MonoBehaviour
         hasMissedTarget = false;
 
 
+        /*
+         * Flight uses kinematic movement.
+         */
+
+        rb.useGravity = false;
+
         rb.isKinematic = true;
+
+        rb.velocity =
+            Vector3.zero;
+
+        rb.angularVelocity =
+            Vector3.zero;
     }
 
 
@@ -425,26 +481,8 @@ public class BulletBoyPlayer : MonoBehaviour
 
     private void OnCollisionEnter(Collision collision)
     {
-        HandleObstacleCollision(
-            collision.gameObject
-        );
-    }
-
-
-    private void OnTriggerEnter(Collider other)
-    {
-        HandleObstacleCollision(
-            other.gameObject
-        );
-    }
-
-
-    private void HandleObstacleCollision(
-        GameObject hitObject)
-    {
         /*
-         * Only detect obstacles while
-         * the Bullet Boy is actually flying.
+         * Ignore collisions when not flying.
          */
 
         if (!isFlying)
@@ -452,20 +490,95 @@ public class BulletBoyPlayer : MonoBehaviour
 
 
         /*
-         * Ignore everything that is not
-         * tagged "Obstacle".
+         * Only react to objects tagged
+         * "Obstacle".
          */
 
-        if (!hitObject.CompareTag("Obstacle"))
+        if (!collision.gameObject.CompareTag("Obstacle"))
             return;
 
 
         /*
-         * Use the exact same failure behavior
-         * as missing the target cannon.
+         * Get the collision normal.
          */
 
-        HitObstacle();
+        Vector3 hitNormal =
+            Vector3.zero;
+
+        if (collision.contactCount > 0)
+        {
+            hitNormal =
+                collision.GetContact(0).normal;
+        }
+
+
+        /*
+         * If for some reason the normal is invalid,
+         * use the opposite flight direction.
+         */
+
+        if (hitNormal.sqrMagnitude < 0.001f)
+        {
+            hitNormal =
+                -flightDirection;
+        }
+
+
+        HitObstacle(
+            hitNormal.normalized
+        );
+    }
+
+
+    // =========================================================
+    // OBSTACLE TRIGGER
+    // =========================================================
+
+    private void OnTriggerEnter(Collider other)
+    {
+        /*
+         * Ignore triggers when not flying.
+         */
+
+        if (!isFlying)
+            return;
+
+
+        /*
+         * Only react to objects tagged
+         * "Obstacle".
+         */
+
+        if (!other.gameObject.CompareTag("Obstacle"))
+            return;
+
+
+        /*
+         * Calculate a direction pointing
+         * away from the obstacle.
+         */
+
+        Vector3 hitNormal =
+            transform.position -
+            other.ClosestPoint(transform.position);
+
+
+        /*
+         * If the closest-point calculation
+         * produces an invalid direction,
+         * use the opposite flight direction.
+         */
+
+        if (hitNormal.sqrMagnitude < 0.001f)
+        {
+            hitNormal =
+                -flightDirection;
+        }
+
+
+        HitObstacle(
+            hitNormal.normalized
+        );
     }
 
 
@@ -473,7 +586,8 @@ public class BulletBoyPlayer : MonoBehaviour
     // HIT OBSTACLE
     // =========================================================
 
-    private void HitObstacle()
+    private void HitObstacle(
+        Vector3 hitNormal)
     {
         /*
          * Prevent the obstacle from being
@@ -488,21 +602,49 @@ public class BulletBoyPlayer : MonoBehaviour
 
 
         /*
-         * Stop the player's flight.
+         * Stop the normal Bullet Boy flight.
          */
 
         isFlying = false;
 
+        isInsideCannon = false;
 
-        /*
-         * Clear target cannon.
-         */
+        currentCannon = null;
 
         targetCannon = null;
 
 
         /*
-         * Stop any Rigidbody movement.
+         * Move the player slightly away from
+         * the obstacle before enabling physics.
+         *
+         * This prevents the player from remaining
+         * stuck inside the collider.
+         */
+
+        transform.position +=
+            hitNormal *
+            obstacleSeparation;
+
+
+        /*
+         * Switch from kinematic flight movement
+         * to real Rigidbody physics.
+         */
+
+        rb.isKinematic = false;
+
+        rb.useGravity = true;
+
+        rb.interpolation =
+            RigidbodyInterpolation.Interpolate;
+
+        rb.collisionDetectionMode =
+            CollisionDetectionMode.Continuous;
+
+
+        /*
+         * Remove the previous movement.
          */
 
         rb.velocity =
@@ -512,14 +654,65 @@ public class BulletBoyPlayer : MonoBehaviour
             Vector3.zero;
 
 
+        /*
+         * Give the player a small impact push.
+         *
+         * This creates the feeling that the
+         * Bullet Boy bounced off the obstacle.
+         */
+
+        Vector3 impactVelocity =
+            hitNormal *
+            obstacleBounceForce;
+
+
+        /*
+         * Keep a little of the original flight
+         * direction so the player doesn't simply
+         * stop in place.
+         */
+
+        impactVelocity +=
+            flightDirection *
+            obstacleForwardForce;
+
+
+        rb.velocity =
+            impactVelocity;
+
+
+        /*
+         * Add some rotation so the player
+         * doesn't look completely stiff while falling.
+         */
+
+        Vector3 tumbleAxis =
+            Vector3.Cross(
+                Vector3.up,
+                hitNormal
+            );
+
+        if (tumbleAxis.sqrMagnitude < 0.001f)
+        {
+            tumbleAxis = Vector3.right;
+        }
+
+
+        rb.AddTorque(
+            tumbleAxis.normalized *
+            8f,
+            ForceMode.Impulse
+        );
+
+
         Debug.Log(
-            "BulletBoyPlayer: Hit obstacle."
+            "BulletBoyPlayer: Hit obstacle and started falling."
         );
 
 
         /*
-         * Use the same CannonManager behavior
-         * as a missed cannon.
+         * Notify CannonManager using the
+         * same failure behavior as a missed cannon.
          */
 
         CannonManager manager =
