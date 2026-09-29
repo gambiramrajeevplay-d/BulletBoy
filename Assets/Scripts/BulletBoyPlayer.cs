@@ -1,9 +1,22 @@
-using System.Collections;
 using UnityEngine;
 
 /*
  * Runs AFTER BulletCannon (-100) and CannonManager (-50), so cannon
  * positions and rotations are always up to date for this frame.
+ *
+ * SMOOTH MOTION OVERVIEW
+ * ----------------------
+ * 1. Launch:   the player is NOT teleported to the exit point. It slides
+ *              out of the barrel and accelerates (ease-in), so there is no
+ *              jump when the shot starts.
+ * 2. Flight:   sub-stepped straight flight (frame-rate independent).
+ * 3. Capture:  the player keeps its speed and is pulled into the next
+ *              cannon by a critically-damped spring measured RELATIVE to the
+ *              cannon's entry point. Velocity is continuous, moving/rotating
+ *              cannons are followed with zero lag, and any leftover offset
+ *              keeps easing out inside the cannon (no snap on arrival).
+ * 4. Rotation: handled with a relative rotation offset that eases to zero,
+ *              so rotating cannons never make the player lag or pop.
  */
 [DefaultExecutionOrder(0)]
 [RequireComponent(typeof(Rigidbody))]
@@ -31,6 +44,37 @@ public class BulletBoyPlayer : MonoBehaviour
     [Tooltip("If the target cannon is not reached within this many seconds the player counts as a miss.")]
     [SerializeField]
     private float maxFlightTime = 10f;
+
+
+    [Header("Smooth Launch")]
+
+    [Tooltip("Seconds the player takes to accelerate to full speed after being shot. 0 = instant.")]
+    [SerializeField]
+    private float launchAccelTime = 0.10f;
+
+    [Tooltip("Speed at the very start of the shot as a fraction of full speed.")]
+    [Range(0.05f, 1f)]
+    [SerializeField]
+    private float launchStartSpeedFactor = 0.55f;
+
+
+    [Header("Smooth Cannon Entry")]
+
+    [Tooltip("Lower = snappier pull into the cannon, higher = softer. 0.07 - 0.12 feels good.")]
+    [SerializeField]
+    private float cannonEntrySmoothTime = 0.09f;
+
+    [Tooltip("How quickly the player's rotation eases into the cannon's rotation.")]
+    [SerializeField]
+    private float cannonEntryRotationSpeed = 14f;
+
+    [Tooltip("The player counts as 'inside' (can be launched) once it is this close to the Entry Point. Any leftover distance keeps easing out smoothly.")]
+    [SerializeField]
+    private float cannonEntryCompleteDistance = 0.35f;
+
+    [Tooltip("Safety: entry is completed after this many seconds no matter what.")]
+    [SerializeField]
+    private float cannonEntryMaxTime = 0.5f;
 
 
     [Header("Cannon Capture")]
@@ -78,18 +122,6 @@ public class BulletBoyPlayer : MonoBehaviour
     private float obstacleSeparation = 0.05f;
 
 
-    [Header("Cannon Entry Visual")]
-
-    [SerializeField]
-    private float cannonEntryDuration = 0.16f;
-
-    [SerializeField]
-    private float cannonEntryPull = 1.35f;
-
-    [SerializeField]
-    private float cannonEntryArc = 0.08f;
-
-
     [Header("Missed Cannon Falling")]
 
     [SerializeField]
@@ -116,13 +148,27 @@ public class BulletBoyPlayer : MonoBehaviour
 
     private BulletCannon currentCannon;
     private BulletCannon targetCannon;
+    private BulletCannon capturingCannon;
 
     private bool hasMissedTarget;
     private float flightTimer;
+    private float lastFlightSpeed;
 
     private Vector3 previousFlightPosition;
 
-    private Coroutine cannonEntryCoroutine;
+    // Launch (barrel slide)
+    private bool inBarrel;
+    private Transform launchExitPoint;
+    private Quaternion flightRotation;
+
+    // Smooth follow state (relative to the cannon's Entry Point)
+    private Vector3 followOffset;
+    private Vector3 followOffsetVelocity;
+    private Quaternion rotOffset = Quaternion.identity;
+    private bool preserveOffsetOnEnter;
+
+    private float entryElapsed;
+    private int captureFrame = -1;
 
     private CannonManager manager;
 
@@ -170,9 +216,6 @@ public class BulletBoyPlayer : MonoBehaviour
 
     private void Update()
     {
-        if (isEnteringCannon)
-            return;
-
         if (isFlying)
             UpdateFlight();
     }
@@ -193,8 +236,22 @@ public class BulletBoyPlayer : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (isInsideCannon && currentCannon != null)
-            FollowCurrentCannon();
+        float dt = Time.deltaTime;
+
+        if (isEnteringCannon)
+        {
+            UpdateEntering(dt);
+        }
+        else if (isInsideCannon && currentCannon != null)
+        {
+            FollowCurrentCannon(dt);
+        }
+        else if (isFlying)
+        {
+            DecayRotationOffset(dt);
+
+            transform.rotation = flightRotation * rotOffset;
+        }
 
         SpinVisual();
     }
@@ -211,23 +268,154 @@ public class BulletBoyPlayer : MonoBehaviour
         );
     }
 
-    private void FollowCurrentCannon()
+
+    // =========================================================
+    // SMOOTH FOLLOW HELPERS
+    // =========================================================
+
+    /// <summary>
+    /// Exact critically-damped spring toward zero offset. Frame-rate
+    /// independent, and it keeps the incoming velocity (no snapping).
+    /// </summary>
+    private void StepPositionSpring(float dt)
     {
-        Transform entryPoint = currentCannon.GetEntryPoint();
+        float smooth = Mathf.Max(0.01f, cannonEntrySmoothTime);
+        float w = 2f / smooth;
+        float e = Mathf.Exp(-w * dt);
+
+        Vector3 temp =
+            (followOffsetVelocity + w * followOffset) * dt;
+
+        followOffset =
+            (followOffset + temp) * e;
+
+        followOffsetVelocity =
+            (followOffsetVelocity - w * temp) * e;
+
+        if (followOffset.sqrMagnitude < 0.000001f &&
+            followOffsetVelocity.sqrMagnitude < 0.0001f)
+        {
+            followOffset = Vector3.zero;
+            followOffsetVelocity = Vector3.zero;
+        }
+    }
+
+    private void DecayRotationOffset(float dt)
+    {
+        float k =
+            1f - Mathf.Exp(
+                -Mathf.Max(0.1f, cannonEntryRotationSpeed) * dt
+            );
+
+        rotOffset =
+            Quaternion.Slerp(rotOffset, Quaternion.identity, k);
+    }
+
+    private void ApplyFollowTransform(BulletCannon cannon)
+    {
+        Transform entryPoint = cannon.GetEntryPoint();
 
         if (entryPoint == null)
             return;
 
-        transform.position = entryPoint.position;
+        transform.position =
+            entryPoint.position + followOffset;
 
         transform.rotation =
-            currentCannon.GetCannonRotation() * cannonPlayerOffset;
+            cannon.GetCannonRotation() *
+            cannonPlayerOffset *
+            rotOffset;
+    }
+
+    /// <summary>
+    /// Keeps the approach velocity but prevents it from carrying the
+    /// player THROUGH the entry point (which would look like a bounce).
+    /// </summary>
+    private Vector3 LimitApproachVelocity(
+        Vector3 velocity,
+        Vector3 offset)
+    {
+        float magnitude = offset.magnitude;
+
+        if (magnitude < 0.0001f)
+            return velocity;
+
+        float w = 2f / Mathf.Max(0.01f, cannonEntrySmoothTime);
+
+        Vector3 toTarget = -offset / magnitude;
+
+        float toward = Vector3.Dot(velocity, toTarget);
+
+        float maxToward = w * magnitude * 0.9f;
+
+        if (toward > maxToward)
+            velocity -= toTarget * (toward - maxToward);
+
+        return velocity;
     }
 
 
     // =========================================================
-    // ENTER CANNON (called by BulletCannon)
+    // ENTERING (smooth capture)
     // =========================================================
+
+    private void UpdateEntering(float dt)
+    {
+        if (capturingCannon == null)
+        {
+            isEnteringCannon = false;
+            return;
+        }
+
+        // The capture frame already moved the player in Update().
+        if (Time.frameCount == captureFrame)
+            return;
+
+        entryElapsed += dt;
+
+        StepPositionSpring(dt);
+        DecayRotationOffset(dt);
+
+        ApplyFollowTransform(capturingCannon);
+
+        if (followOffset.magnitude <= cannonEntryCompleteDistance ||
+            entryElapsed >= cannonEntryMaxTime)
+        {
+            CompleteEntry();
+        }
+    }
+
+    private void CompleteEntry()
+    {
+        BulletCannon cannon = capturingCannon;
+
+        capturingCannon = null;
+        isEnteringCannon = false;
+
+        if (cannon == null)
+            return;
+
+        // Keep the leftover offset so it can ease out INSIDE the cannon.
+        preserveOffsetOnEnter = true;
+
+        cannon.EnterCannon(this);
+
+        if (Manager != null)
+            Manager.PlayerEnteredCannon(cannon);
+    }
+
+
+    // =========================================================
+    // INSIDE CANNON
+    // =========================================================
+
+    private void FollowCurrentCannon(float dt)
+    {
+        StepPositionSpring(dt);
+        DecayRotationOffset(dt);
+
+        ApplyFollowTransform(currentCannon);
+    }
 
     public void EnterCannon(BulletCannon cannon)
     {
@@ -243,12 +431,24 @@ public class BulletBoyPlayer : MonoBehaviour
             return;
         }
 
+        if (!preserveOffsetOnEnter)
+        {
+            // Very first cannon of the level: start exactly on the entry point.
+            followOffset = Vector3.zero;
+            followOffsetVelocity = Vector3.zero;
+            rotOffset = Quaternion.identity;
+        }
+
+        preserveOffsetOnEnter = false;
+
         isEnteringCannon = false;
         isFlying = false;
         isInsideCannon = true;
+        inBarrel = false;
 
         currentCannon = cannon;
         targetCannon = null;
+        capturingCannon = null;
 
         flightDirection = Vector3.zero;
         hasMissedTarget = false;
@@ -282,20 +482,27 @@ public class BulletBoyPlayer : MonoBehaviour
             return;
         }
 
-        if (cannonEntryCoroutine != null)
-        {
-            StopCoroutine(cannonEntryCoroutine);
-            cannonEntryCoroutine = null;
-        }
-
         isEnteringCannon = false;
         isInsideCannon = false;
         isFlying = true;
 
         currentCannon = null;
+        capturingCannon = null;
 
-        transform.position = exitPoint.position;
-        transform.rotation = cannonRotation * cannonPlayerOffset;
+        /*
+         * NO teleport to the exit point. The player keeps its current
+         * position and slides out of the barrel (see UpdateFlight).
+         */
+
+        launchExitPoint = exitPoint;
+        inBarrel = true;
+
+        flightRotation = cannonRotation * cannonPlayerOffset;
+
+        // Residual position offset is no longer needed; the position
+        // itself is already continuous.
+        followOffset = Vector3.zero;
+        followOffsetVelocity = Vector3.zero;
 
         Vector3 direction = launchDirection.normalized;
 
@@ -311,6 +518,7 @@ public class BulletBoyPlayer : MonoBehaviour
         flightDirection = direction;
 
         flightSpeed = Mathf.Max(speed, 0.01f);
+        lastFlightSpeed = flightSpeed * launchStartSpeedFactor;
 
         hasMissedTarget = false;
         flightTimer = 0f;
@@ -325,6 +533,21 @@ public class BulletBoyPlayer : MonoBehaviour
         Debug.Log("BulletBoyPlayer: Launched, direction = " + flightDirection);
     }
 
+    private float SpeedAt(float age)
+    {
+        if (launchAccelTime <= 0.0001f)
+            return flightSpeed;
+
+        float t = Mathf.Clamp01(age / launchAccelTime);
+
+        return flightSpeed *
+               Mathf.Lerp(
+                   launchStartSpeedFactor,
+                   1f,
+                   Mathf.SmoothStep(0f, 1f, t)
+               );
+    }
+
 
     // =========================================================
     // FLIGHT (sub-stepped, frame-rate independent)
@@ -337,11 +560,68 @@ public class BulletBoyPlayer : MonoBehaviour
         if (dt <= 0f)
             return;
 
+        flightTimer += dt;
+
         Vector3 start = transform.position;
 
         previousFlightPosition = start;
 
-        float distance = flightSpeed * dt;
+        float speed = SpeedAt(flightTimer - dt * 0.5f);
+
+        lastFlightSpeed = speed;
+
+        float remaining = dt;
+
+
+        /*
+         * BARREL SLIDE: glide from where the player is to the exit point
+         * instead of teleporting there.
+         */
+
+        if (inBarrel)
+        {
+            if (launchExitPoint == null)
+            {
+                inBarrel = false;
+            }
+            else
+            {
+                Vector3 toExit =
+                    launchExitPoint.position - start;
+
+                float distanceToExit = toExit.magnitude;
+
+                float step = speed * dt;
+
+                if (distanceToExit > step)
+                {
+                    transform.position =
+                        start + toExit * (step / distanceToExit);
+
+                    return;
+                }
+
+                transform.position = launchExitPoint.position;
+
+                inBarrel = false;
+
+                remaining =
+                    Mathf.Max(
+                        0f,
+                        dt - distanceToExit / Mathf.Max(0.01f, speed)
+                    );
+
+                start = transform.position;
+
+                if (remaining <= 0.0001f)
+                    return;
+            }
+        }
+
+
+        float distance = speed * remaining;
+
+        float tBase = 1f - remaining / dt;
 
 
         /*
@@ -365,7 +645,7 @@ public class BulletBoyPlayer : MonoBehaviour
          */
 
         if (targetCannon != null &&
-            TryCaptureAlongPath(start, distance))
+            TryCaptureAlongPath(start, distance, tBase))
         {
             return;
         }
@@ -384,8 +664,6 @@ public class BulletBoyPlayer : MonoBehaviour
             return;
         }
 
-
-        flightTimer += dt;
 
         CheckForMiss();
     }
@@ -452,7 +730,10 @@ public class BulletBoyPlayer : MonoBehaviour
     // CAPTURE TEST
     // =========================================================
 
-    private bool TryCaptureAlongPath(Vector3 start, float distance)
+    private bool TryCaptureAlongPath(
+        Vector3 start,
+        float distance,
+        float tBase)
     {
         if (targetCannon == null)
             return false;
@@ -480,13 +761,16 @@ public class BulletBoyPlayer : MonoBehaviour
 
         for (int i = 1; i <= steps; i++)
         {
-            float t0 = (float)(i - 1) / steps;
-            float t1 = (float)i / steps;
+            float f0 = (float)(i - 1) / steps;
+            float f1 = (float)i / steps;
 
-            Vector3 p0 = start + flightDirection * (distance * t0);
-            Vector3 p1 = start + flightDirection * (distance * t1);
+            Vector3 p0 = start + flightDirection * (distance * f0);
+            Vector3 p1 = start + flightDirection * (distance * f1);
 
             // The cannon is interpolated over the same time slice.
+            float t0 = tBase + (1f - tBase) * f0;
+            float t1 = tBase + (1f - tBase) * f1;
+
             Vector3 e0 = Vector3.Lerp(prevEntry, currEntry, t0);
             Vector3 e1 = Vector3.Lerp(prevEntry, currEntry, t1);
 
@@ -552,7 +836,7 @@ public class BulletBoyPlayer : MonoBehaviour
 
 
     // =========================================================
-    // BEGIN CANNON ENTRY
+    // BEGIN CANNON ENTRY (smooth capture, no coroutine)
     // =========================================================
 
     private void BeginCannonEntry()
@@ -562,100 +846,65 @@ public class BulletBoyPlayer : MonoBehaviour
 
         BulletCannon cannon = targetCannon;
 
+        Transform entryPoint = cannon.GetEntryPoint();
+
+        if (entryPoint == null)
+            return;
+
         targetCannon = null;
         hasMissedTarget = false;
 
-        cannonEntryCoroutine =
-            StartCoroutine(CannonEntryRoutine(cannon));
-    }
-
-    private IEnumerator CannonEntryRoutine(BulletCannon cannon)
-    {
-        if (cannon == null)
-            yield break;
-
-        Transform entryPoint = cannon.GetEntryPoint();
-        Transform exitPoint = cannon.GetExitPoint();
-
-        if (entryPoint == null || exitPoint == null)
-            yield break;
+        capturingCannon = cannon;
 
         isEnteringCannon = true;
         isFlying = false;
         isInsideCannon = false;
+        inBarrel = false;
 
         rb.isKinematic = true;
         rb.useGravity = false;
         rb.velocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
 
-        Vector3 startPosition = transform.position;
-        Quaternion startRotation = transform.rotation;
+        /*
+         * Work RELATIVE to the cannon so a moving / rotating cannon is
+         * followed with zero lag.
+         */
 
-        Vector3 arcDirection =
-            Vector3.Cross(
-                flightDirection.sqrMagnitude > 0.001f
-                    ? flightDirection
-                    : Vector3.right,
-                Vector3.forward
-            );
+        followOffset =
+            transform.position - entryPoint.position;
 
-        if (arcDirection.sqrMagnitude < 0.001f)
-            arcDirection = Vector3.up;
+        // Player velocity minus the cannon's own entry velocity.
+        Vector3 playerVelocity =
+            flightDirection * lastFlightSpeed;
 
-        arcDirection.Normalize();
+        Vector3 entryVelocity = Vector3.zero;
 
-        float duration = Mathf.Max(0.01f, cannonEntryDuration);
-        float elapsed = 0f;
+        float dt = Time.deltaTime;
 
-        while (elapsed < duration)
+        if (dt > 0.0001f)
         {
-            elapsed += Time.deltaTime;
-
-            float rawT = Mathf.Clamp01(elapsed / duration);
-            float smoothT = Mathf.SmoothStep(0f, 1f, rawT);
-            float pullT = Mathf.Pow(smoothT, Mathf.Max(0.25f, cannonEntryPull));
-
-            // Read every frame so a moving cannon is followed.
-            Vector3 currentEntryPosition = entryPoint.position;
-
-            Quaternion targetRotation =
-                cannon.GetCannonRotation() * cannonPlayerOffset;
-
-            if (rawT >= 1f)
-            {
-                transform.position = currentEntryPosition;
-                transform.rotation = targetRotation;
-            }
-            else
-            {
-                Vector3 desired =
-                    Vector3.Lerp(startPosition, currentEntryPosition, pullT);
-
-                desired +=
-                    arcDirection *
-                    (Mathf.Sin(rawT * Mathf.PI) * cannonEntryArc);
-
-                transform.position = desired;
-
-                transform.rotation =
-                    Quaternion.Slerp(
-                        startRotation,
-                        targetRotation,
-                        Mathf.SmoothStep(0f, 1f, pullT)
-                    );
-            }
-
-            yield return null;
+            entryVelocity =
+                (cannon.GetCurrentEntryPosition() -
+                 cannon.GetPreviousEntryPosition()) / dt;
         }
 
-        isEnteringCannon = false;
-        cannonEntryCoroutine = null;
+        followOffsetVelocity =
+            LimitApproachVelocity(
+                playerVelocity - entryVelocity,
+                followOffset
+            );
 
-        cannon.EnterCannon(this);
+        // Rotation offset relative to the cannon's target rotation.
+        Quaternion targetRotation =
+            cannon.GetCannonRotation() * cannonPlayerOffset;
 
-        if (Manager != null)
-            Manager.PlayerEnteredCannon(cannon);
+        rotOffset =
+            Quaternion.Inverse(targetRotation) * transform.rotation;
+
+        entryElapsed = 0f;
+
+        captureFrame = Time.frameCount;
     }
 
 
@@ -707,14 +956,14 @@ public class BulletBoyPlayer : MonoBehaviour
 
         hasMissedTarget = true;
 
-        StopEntryRoutine();
-
         isEnteringCannon = false;
         isFlying = false;
         isInsideCannon = false;
+        inBarrel = false;
 
         currentCannon = null;
         targetCannon = null;
+        capturingCannon = null;
 
         transform.position += hitNormal * obstacleSeparation;
 
@@ -758,14 +1007,14 @@ public class BulletBoyPlayer : MonoBehaviour
 
         hasMissedTarget = true;
 
-        StopEntryRoutine();
-
         isEnteringCannon = false;
         isFlying = false;
         isInsideCannon = false;
+        inBarrel = false;
 
         currentCannon = null;
         targetCannon = null;
+        capturingCannon = null;
 
         rb.isKinematic = false;
         rb.useGravity = true;
@@ -793,15 +1042,6 @@ public class BulletBoyPlayer : MonoBehaviour
 
         if (Manager != null)
             Manager.PlayerMissedCannon();
-    }
-
-    private void StopEntryRoutine()
-    {
-        if (cannonEntryCoroutine != null)
-        {
-            StopCoroutine(cannonEntryCoroutine);
-            cannonEntryCoroutine = null;
-        }
     }
 
 

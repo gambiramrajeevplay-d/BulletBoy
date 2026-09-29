@@ -21,6 +21,10 @@ public class CannonManager : MonoBehaviour
     [Tooltip("Only used when the Cannons list above is EMPTY (auto-find). An assigned list is always used exactly as written.")]
     [SerializeField] private bool useHierarchyOrder = true;
 
+    [Header("Smoothness")]
+    [Tooltip("Android / Fire TV builds often run at 30 FPS by default, which looks like snapping. 60 is recommended. Set 0 to leave it untouched.")]
+    [SerializeField] private int targetFrameRate = 60;
+
     [Header("Input")]
     [Tooltip("A tap that happens while the player is still entering a cannon is remembered for this long (seconds). Set 0 to disable.")]
     [SerializeField] private float inputBufferTime = 0.12f;
@@ -53,11 +57,24 @@ public class CannonManager : MonoBehaviour
 
     private void Awake()
     {
+        ApplyFrameRate();
+
         FindPlayer();
         FindCannons();
 
         if (finishPanel != null)
             finishPanel.SetActive(false);
+    }
+
+    private void ApplyFrameRate()
+    {
+        if (targetFrameRate <= 0)
+            return;
+
+        // The target frame rate is ignored while VSync is on.
+        QualitySettings.vSyncCount = 0;
+
+        Application.targetFrameRate = targetFrameRate;
     }
 
     private void Start()
