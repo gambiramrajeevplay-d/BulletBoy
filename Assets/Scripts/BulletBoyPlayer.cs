@@ -1,21 +1,51 @@
 using System.Collections;
 using UnityEngine;
 
+/*
+ * Runs AFTER BulletCannon (-100) and CannonManager (-50), so cannon
+ * positions and rotations are always up to date for this frame.
+ */
+[DefaultExecutionOrder(0)]
 [RequireComponent(typeof(Rigidbody))]
 public class BulletBoyPlayer : MonoBehaviour
 {
     [Header("Player Rotation")]
+
     [SerializeField]
-    private Vector3 playerBaseRotation =
-        new Vector3(0f, 0f, -90f);
+    private Vector3 playerBaseRotation = new Vector3(0f, 0f, -90f);
 
 
     [Header("Flight")]
+
     [SerializeField]
     private float flightSpeed = 18f;
 
+    [Tooltip("Flight is simulated in steps no longer than this. Prevents skipping cannons on low FPS (TV / mobile).")]
+    [SerializeField]
+    private float maxStepDistance = 0.4f;
+
+    [Tooltip("Flatten the launch direction onto the XY plane so the player never drifts toward/away from the camera.")]
+    [SerializeField]
+    private bool flattenLaunchDirection = true;
+
+    [Tooltip("If the target cannon is not reached within this many seconds the player counts as a miss.")]
+    [SerializeField]
+    private float maxFlightTime = 10f;
+
+
+    [Header("Cannon Capture")]
+
+    [Tooltip("Ignore the Z (depth) axis when testing capture. Recommended for side-view games.")]
+    [SerializeField]
+    private bool ignoreDepthAxis = true;
+
+    [Tooltip("Extra distance the player must travel past a cannon (and its movement range) before it counts as a miss.")]
+    [SerializeField]
+    private float missMargin = 1.5f;
+
 
     [Header("Visual")]
+
     [SerializeField]
     private Transform visualModel;
 
@@ -24,6 +54,17 @@ public class BulletBoyPlayer : MonoBehaviour
 
 
     [Header("Obstacle Hit Physics")]
+
+    [SerializeField]
+    private string obstacleTag = "Obstacle";
+
+    [Tooltip("Sweep ahead for obstacles so they cannot be skipped on low FPS.")]
+    [SerializeField]
+    private bool sweepObstacles = true;
+
+    [SerializeField]
+    private float sweepRadius = 0.35f;
+
     [Tooltip("How strongly the player is pushed away from the obstacle.")]
     [SerializeField]
     private float obstacleBounceForce = 4f;
@@ -32,28 +73,69 @@ public class BulletBoyPlayer : MonoBehaviour
     [SerializeField]
     private float obstacleForwardForce = 2f;
 
-    [Tooltip("Gravity strength used when falling after hitting an obstacle.")]
-    [SerializeField]
-    private float obstacleGravity = 20f;
-
     [Tooltip("Small position offset used to prevent the player from sticking inside the collider.")]
     [SerializeField]
     private float obstacleSeparation = 0.05f;
+
+
+    [Header("Cannon Entry Visual")]
+
+    [SerializeField]
+    private float cannonEntryDuration = 0.16f;
+
+    [SerializeField]
+    private float cannonEntryPull = 1.35f;
+
+    [SerializeField]
+    private float cannonEntryArc = 0.08f;
+
+
+    [Header("Missed Cannon Falling")]
+
+    [SerializeField]
+    private float missedCannonGravity = 20f;
+
+    [SerializeField]
+    private float missedCannonForwardSpeed = 4f;
+
+    [SerializeField]
+    private float missedCannonDownwardSpeed = 2f;
+
+    [SerializeField]
+    private float missedCannonTorque = 8f;
 
 
     private Rigidbody rb;
 
     private bool isInsideCannon;
     private bool isFlying;
+    private bool isEnteringCannon;
 
     private Vector3 flightDirection;
-
     private Quaternion cannonPlayerOffset;
 
     private BulletCannon currentCannon;
     private BulletCannon targetCannon;
 
     private bool hasMissedTarget;
+    private float flightTimer;
+
+    private Vector3 previousFlightPosition;
+
+    private Coroutine cannonEntryCoroutine;
+
+    private CannonManager manager;
+
+    private CannonManager Manager
+    {
+        get
+        {
+            if (manager == null)
+                manager = FindObjectOfType<CannonManager>();
+
+            return manager;
+        }
+    }
 
 
     // =========================================================
@@ -66,33 +148,19 @@ public class BulletBoyPlayer : MonoBehaviour
 
         rb.useGravity = false;
         rb.isKinematic = true;
+        rb.interpolation = RigidbodyInterpolation.None;
+        rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
 
-        rb.interpolation =
-            RigidbodyInterpolation.None;
+        if (visualModel == null && transform.childCount > 0)
+            visualModel = transform.GetChild(0);
 
-        rb.collisionDetectionMode =
-            CollisionDetectionMode.Continuous;
-
-
-        if (visualModel == null &&
-            transform.childCount > 0)
-        {
-            visualModel =
-                transform.GetChild(0);
-        }
-
-
-        cannonPlayerOffset =
-            Quaternion.Euler(
-                playerBaseRotation
-            );
+        cannonPlayerOffset = Quaternion.Euler(playerBaseRotation);
     }
-
 
     private void Start()
     {
-        transform.rotation =
-            cannonPlayerOffset;
+        transform.rotation = cannonPlayerOffset;
+        manager = FindObjectOfType<CannonManager>();
     }
 
 
@@ -102,249 +170,93 @@ public class BulletBoyPlayer : MonoBehaviour
 
     private void Update()
     {
-        /*
-         * Flight movement.
-         */
+        if (isEnteringCannon)
+            return;
 
         if (isFlying)
-        {
             UpdateFlight();
-        }
     }
-
-
-    // =========================================================
-    // FIXED UPDATE
-    // =========================================================
 
     private void FixedUpdate()
     {
-        /*
-         * When the player has fallen after
-         * hitting an obstacle, use custom gravity.
-         */
-
         if (!isFlying &&
             !isInsideCannon &&
+            !isEnteringCannon &&
             !rb.isKinematic)
         {
             rb.AddForce(
-                Vector3.down *
-                obstacleGravity,
+                Vector3.down * missedCannonGravity,
                 ForceMode.Acceleration
             );
         }
     }
 
-
-    // =========================================================
-    // LATE UPDATE
-    // =========================================================
-
     private void LateUpdate()
     {
-        /*
-         * When inside a cannon, follow the
-         * cannon AFTER the cannon has finished
-         * rotating for this frame.
-         */
-
-        if (isInsideCannon &&
-            currentCannon != null)
-        {
+        if (isInsideCannon && currentCannon != null)
             FollowCurrentCannon();
-        }
-
-
-        /*
-         * Rotate only the visual model.
-         */
 
         SpinVisual();
     }
 
-
-    // =========================================================
-    // VISUAL SPIN
-    // =========================================================
-
     private void SpinVisual()
     {
-        if (visualModel == null)
-            return;
-
-        if (visualSpinSpeed == 0f)
+        if (visualModel == null || visualSpinSpeed == 0f)
             return;
 
         visualModel.Rotate(
             Vector3.up,
-            visualSpinSpeed *
-            Time.deltaTime,
+            visualSpinSpeed * Time.deltaTime,
             Space.Self
         );
     }
 
-
-    // =========================================================
-    // FOLLOW CURRENT CANNON
-    // =========================================================
-
     private void FollowCurrentCannon()
     {
-        if (currentCannon == null)
-            return;
-
-
-        Transform entryPoint =
-            currentCannon.GetEntryPoint();
-
+        Transform entryPoint = currentCannon.GetEntryPoint();
 
         if (entryPoint == null)
             return;
 
-
-        /*
-         * Follow the exact entry position.
-         */
-
-        transform.position =
-            entryPoint.position;
-
-
-        /*
-         * Follow the exact cannon rotation.
-         */
+        transform.position = entryPoint.position;
 
         transform.rotation =
-            currentCannon.GetCannonRotation() *
-            cannonPlayerOffset;
+            currentCannon.GetCannonRotation() * cannonPlayerOffset;
     }
 
 
     // =========================================================
-    // ENTER CANNON
+    // ENTER CANNON (called by BulletCannon)
     // =========================================================
 
-    public void EnterCannon(
-        Transform entryPoint,
-        Transform exitPoint,
-        Quaternion cannonRotation)
+    public void EnterCannon(BulletCannon cannon)
     {
-        if (entryPoint == null)
+        if (cannon == null)
         {
-            Debug.LogError(
-                "BulletBoyPlayer: Entry Point is missing."
-            );
-
+            Debug.LogError("BulletBoyPlayer: Cannon is missing.");
             return;
         }
 
-
-        if (exitPoint == null)
+        if (cannon.GetEntryPoint() == null || cannon.GetExitPoint() == null)
         {
-            Debug.LogError(
-                "BulletBoyPlayer: Exit Point is missing."
-            );
-
+            Debug.LogError("BulletBoyPlayer: Cannon entry/exit point is missing.");
             return;
         }
 
-
-        /*
-         * Player is no longer flying.
-         */
-
+        isEnteringCannon = false;
         isFlying = false;
-
-
-        /*
-         * Player is now inside the cannon.
-         */
-
         isInsideCannon = true;
 
+        currentCannon = cannon;
+        targetCannon = null;
 
-        /*
-         * Store the cannon that currently
-         * contains the player.
-         */
-
-        currentCannon =
-            entryPoint.GetComponentInParent<BulletCannon>();
-
-
-        /*
-         * Reset flight data.
-         */
-
-        flightDirection =
-            Vector3.zero;
-
-
-        /*
-         * Reset miss state.
-         */
-
+        flightDirection = Vector3.zero;
         hasMissedTarget = false;
 
-
-        /*
-         * Stop Rigidbody movement.
-         */
-
-        rb.velocity =
-            Vector3.zero;
-
-        rb.angularVelocity =
-            Vector3.zero;
-
+        rb.velocity = Vector3.zero;
+        rb.angularVelocity = Vector3.zero;
         rb.useGravity = false;
-
         rb.isKinematic = true;
-
-
-        /*
-         * Put player at the entry point.
-         */
-
-        transform.position =
-            entryPoint.position;
-
-
-        /*
-         * Match cannon rotation.
-         */
-
-        transform.rotation =
-            cannonRotation *
-            cannonPlayerOffset;
-    }
-
-
-    // =========================================================
-    // SYNC WITH CANNON
-    // =========================================================
-
-    /*
-     * Kept for compatibility with BulletCannon.
-     *
-     * The actual follow is handled by
-     * LateUpdate().
-     */
-
-    public void SyncWithCannon(
-        Transform entryPoint,
-        Quaternion cannonRotation)
-    {
-        if (!isInsideCannon)
-            return;
-
-        /*
-         * Do not continuously update the
-         * transform here.
-         *
-         * LateUpdate handles it.
-         */
     }
 
 
@@ -360,118 +272,390 @@ public class BulletBoyPlayer : MonoBehaviour
     {
         if (exitPoint == null)
         {
-            Debug.LogError(
-                "BulletBoyPlayer: Exit Point is missing."
-            );
-
+            Debug.LogError("BulletBoyPlayer: Exit Point is missing.");
             return;
         }
 
-
-        if (launchDirection.sqrMagnitude <
-            0.001f)
+        if (launchDirection.sqrMagnitude < 0.001f)
         {
-            Debug.LogError(
-                "BulletBoyPlayer: Launch direction is invalid."
-            );
-
+            Debug.LogError("BulletBoyPlayer: Launch direction is invalid.");
             return;
         }
 
+        if (cannonEntryCoroutine != null)
+        {
+            StopCoroutine(cannonEntryCoroutine);
+            cannonEntryCoroutine = null;
+        }
 
-        /*
-         * Stop following the cannon.
-         */
-
+        isEnteringCannon = false;
         isInsideCannon = false;
-
         isFlying = true;
 
         currentCannon = null;
 
+        transform.position = exitPoint.position;
+        transform.rotation = cannonRotation * cannonPlayerOffset;
 
-        /*
-         * Start exactly at the exit point.
-         */
+        Vector3 direction = launchDirection.normalized;
 
-        transform.position =
-            exitPoint.position;
+        if (flattenLaunchDirection)
+        {
+            Vector3 flat = direction;
+            flat.z = 0f;
 
+            if (flat.sqrMagnitude > 0.01f)
+                direction = flat.normalized;
+        }
 
-        /*
-         * Capture the cannon rotation
-         * at the exact moment of launch.
-         */
+        flightDirection = direction;
 
-        transform.rotation =
-            cannonRotation *
-            cannonPlayerOffset;
-
-
-        /*
-         * Capture launch direction.
-         *
-         * This direction NEVER changes
-         * during the flight.
-         */
-
-        flightDirection =
-            launchDirection.normalized;
-
-
-        /*
-         * Store launch speed.
-         */
-
-        flightSpeed =
-            Mathf.Max(
-                speed,
-                0.01f
-            );
-
-
-        /*
-         * Reset miss detection.
-         */
+        flightSpeed = Mathf.Max(speed, 0.01f);
 
         hasMissedTarget = false;
+        flightTimer = 0f;
 
-
-        /*
-         * Flight uses kinematic movement.
-         */
+        previousFlightPosition = transform.position;
 
         rb.useGravity = false;
-
         rb.isKinematic = true;
+        rb.velocity = Vector3.zero;
+        rb.angularVelocity = Vector3.zero;
 
-        rb.velocity =
-            Vector3.zero;
-
-        rb.angularVelocity =
-            Vector3.zero;
+        Debug.Log("BulletBoyPlayer: Launched, direction = " + flightDirection);
     }
 
 
     // =========================================================
-    // FLIGHT
+    // FLIGHT (sub-stepped, frame-rate independent)
     // =========================================================
 
     private void UpdateFlight()
     {
+        float dt = Time.deltaTime;
+
+        if (dt <= 0f)
+            return;
+
+        Vector3 start = transform.position;
+
+        previousFlightPosition = start;
+
+        float distance = flightSpeed * dt;
+
+
         /*
-         * No gravity.
-         *
-         * Straight-line movement.
+         * Obstacle sweep: never fly through an obstacle.
          */
 
-        transform.position +=
-            flightDirection *
-            flightSpeed *
-            Time.deltaTime;
+        bool obstacleHit =
+            SweepForObstacle(
+                start,
+                distance,
+                out float obstacleDistance,
+                out Vector3 obstacleNormal
+            );
+
+        if (obstacleHit)
+            distance = obstacleDistance;
 
 
-        CheckTargetCannon();
+        /*
+         * Cannon capture along the whole path.
+         */
+
+        if (targetCannon != null &&
+            TryCaptureAlongPath(start, distance))
+        {
+            return;
+        }
+
+
+        transform.position =
+            start + flightDirection * distance;
+
+
+        if (obstacleHit)
+        {
+            if (obstacleNormal.sqrMagnitude < 0.001f)
+                obstacleNormal = -flightDirection;
+
+            HitObstacle(obstacleNormal.normalized);
+            return;
+        }
+
+
+        flightTimer += dt;
+
+        CheckForMiss();
+    }
+
+    private bool SweepForObstacle(
+        Vector3 origin,
+        float distance,
+        out float hitDistance,
+        out Vector3 hitNormal)
+    {
+        hitDistance = distance;
+        hitNormal = -flightDirection;
+
+        if (!sweepObstacles || distance <= 0.0001f)
+            return false;
+
+        RaycastHit[] hits =
+            Physics.SphereCastAll(
+                origin,
+                sweepRadius,
+                flightDirection,
+                distance,
+                ~0,
+                QueryTriggerInteraction.Collide
+            );
+
+        float best = float.MaxValue;
+        bool found = false;
+
+        for (int i = 0; i < hits.Length; i++)
+        {
+            Collider c = hits[i].collider;
+
+            if (c == null || c.transform.IsChildOf(transform))
+                continue;
+
+            if (!c.CompareTag(obstacleTag))
+                continue;
+
+            if (hits[i].distance < best)
+            {
+                best = hits[i].distance;
+                hitNormal = hits[i].normal;
+                found = true;
+            }
+        }
+
+        if (found)
+            hitDistance = Mathf.Max(0f, best);
+
+        return found;
+    }
+
+    private Vector3 Flat(Vector3 v)
+    {
+        if (ignoreDepthAxis)
+            v.z = 0f;
+
+        return v;
+    }
+
+
+    // =========================================================
+    // CAPTURE TEST
+    // =========================================================
+
+    private bool TryCaptureAlongPath(Vector3 start, float distance)
+    {
+        if (targetCannon == null)
+            return false;
+
+        if (targetCannon.GetEntryPoint() == null)
+            return false;
+
+        Vector3 prevEntry = targetCannon.GetPreviousEntryPosition();
+        Vector3 currEntry = targetCannon.GetCurrentEntryPosition();
+
+        Vector3 prevBody = targetCannon.GetPreviousCannonPosition();
+        Vector3 currBody = targetCannon.GetCurrentCannonPosition();
+
+        float entryRadius = targetCannon.GetCaptureRadius();
+        float bodyRadius = targetCannon.GetBodyRadius();
+
+        int steps =
+            Mathf.Clamp(
+                Mathf.CeilToInt(
+                    distance / Mathf.Max(0.05f, maxStepDistance)
+                ),
+                1,
+                128
+            );
+
+        for (int i = 1; i <= steps; i++)
+        {
+            float t0 = (float)(i - 1) / steps;
+            float t1 = (float)i / steps;
+
+            Vector3 p0 = start + flightDirection * (distance * t0);
+            Vector3 p1 = start + flightDirection * (distance * t1);
+
+            // The cannon is interpolated over the same time slice.
+            Vector3 e0 = Vector3.Lerp(prevEntry, currEntry, t0);
+            Vector3 e1 = Vector3.Lerp(prevEntry, currEntry, t1);
+
+            Vector3 b0 = Vector3.Lerp(prevBody, currBody, t0);
+            Vector3 b1 = Vector3.Lerp(prevBody, currBody, t1);
+
+            float entryDistance =
+                BulletCannon.SegmentSegmentDistance(
+                    Flat(p0), Flat(p1), Flat(e0), Flat(e1)
+                );
+
+            float bodyDistance =
+                BulletCannon.SegmentSegmentDistance(
+                    Flat(p0), Flat(p1), Flat(b0), Flat(b1)
+                );
+
+            if (entryDistance <= entryRadius ||
+                bodyDistance <= bodyRadius)
+            {
+                transform.position = p1;
+
+                BeginCannonEntry();
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+
+    // =========================================================
+    // MISS TEST
+    // =========================================================
+
+    private void CheckForMiss()
+    {
+        if (targetCannon == null || hasMissedTarget)
+            return;
+
+        if (flightTimer >= maxFlightTime)
+        {
+            MissedTargetCannon();
+            return;
+        }
+
+        Vector3 entry = targetCannon.GetCurrentEntryPosition();
+
+        float passed =
+            Vector3.Dot(
+                transform.position - entry,
+                flightDirection
+            );
+
+        float allowance =
+            targetCannon.GetCaptureRadius() +
+            targetCannon.GetMovementExtent() +
+            Mathf.Max(0f, missMargin);
+
+        if (passed > allowance)
+            MissedTargetCannon();
+    }
+
+
+    // =========================================================
+    // BEGIN CANNON ENTRY
+    // =========================================================
+
+    private void BeginCannonEntry()
+    {
+        if (targetCannon == null || isEnteringCannon)
+            return;
+
+        BulletCannon cannon = targetCannon;
+
+        targetCannon = null;
+        hasMissedTarget = false;
+
+        cannonEntryCoroutine =
+            StartCoroutine(CannonEntryRoutine(cannon));
+    }
+
+    private IEnumerator CannonEntryRoutine(BulletCannon cannon)
+    {
+        if (cannon == null)
+            yield break;
+
+        Transform entryPoint = cannon.GetEntryPoint();
+        Transform exitPoint = cannon.GetExitPoint();
+
+        if (entryPoint == null || exitPoint == null)
+            yield break;
+
+        isEnteringCannon = true;
+        isFlying = false;
+        isInsideCannon = false;
+
+        rb.isKinematic = true;
+        rb.useGravity = false;
+        rb.velocity = Vector3.zero;
+        rb.angularVelocity = Vector3.zero;
+
+        Vector3 startPosition = transform.position;
+        Quaternion startRotation = transform.rotation;
+
+        Vector3 arcDirection =
+            Vector3.Cross(
+                flightDirection.sqrMagnitude > 0.001f
+                    ? flightDirection
+                    : Vector3.right,
+                Vector3.forward
+            );
+
+        if (arcDirection.sqrMagnitude < 0.001f)
+            arcDirection = Vector3.up;
+
+        arcDirection.Normalize();
+
+        float duration = Mathf.Max(0.01f, cannonEntryDuration);
+        float elapsed = 0f;
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+
+            float rawT = Mathf.Clamp01(elapsed / duration);
+            float smoothT = Mathf.SmoothStep(0f, 1f, rawT);
+            float pullT = Mathf.Pow(smoothT, Mathf.Max(0.25f, cannonEntryPull));
+
+            // Read every frame so a moving cannon is followed.
+            Vector3 currentEntryPosition = entryPoint.position;
+
+            Quaternion targetRotation =
+                cannon.GetCannonRotation() * cannonPlayerOffset;
+
+            if (rawT >= 1f)
+            {
+                transform.position = currentEntryPosition;
+                transform.rotation = targetRotation;
+            }
+            else
+            {
+                Vector3 desired =
+                    Vector3.Lerp(startPosition, currentEntryPosition, pullT);
+
+                desired +=
+                    arcDirection *
+                    (Mathf.Sin(rawT * Mathf.PI) * cannonEntryArc);
+
+                transform.position = desired;
+
+                transform.rotation =
+                    Quaternion.Slerp(
+                        startRotation,
+                        targetRotation,
+                        Mathf.SmoothStep(0f, 1f, pullT)
+                    );
+            }
+
+            yield return null;
+        }
+
+        isEnteringCannon = false;
+        cannonEntryCoroutine = null;
+
+        cannon.EnterCannon(this);
+
+        if (Manager != null)
+            Manager.PlayerEnteredCannon(cannon);
     }
 
 
@@ -481,331 +665,85 @@ public class BulletBoyPlayer : MonoBehaviour
 
     private void OnCollisionEnter(Collision collision)
     {
-        /*
-         * Ignore collisions when not flying.
-         */
-
         if (!isFlying)
             return;
 
-
-        /*
-         * Only react to objects tagged
-         * "Obstacle".
-         */
-
-        if (!collision.gameObject.CompareTag("Obstacle"))
+        if (!collision.gameObject.CompareTag(obstacleTag))
             return;
 
-
-        /*
-         * Get the collision normal.
-         */
-
-        Vector3 hitNormal =
-            Vector3.zero;
+        Vector3 hitNormal = Vector3.zero;
 
         if (collision.contactCount > 0)
-        {
-            hitNormal =
-                collision.GetContact(0).normal;
-        }
-
-
-        /*
-         * If for some reason the normal is invalid,
-         * use the opposite flight direction.
-         */
+            hitNormal = collision.GetContact(0).normal;
 
         if (hitNormal.sqrMagnitude < 0.001f)
-        {
-            hitNormal =
-                -flightDirection;
-        }
+            hitNormal = -flightDirection;
 
-
-        HitObstacle(
-            hitNormal.normalized
-        );
+        HitObstacle(hitNormal.normalized);
     }
-
-
-    // =========================================================
-    // OBSTACLE TRIGGER
-    // =========================================================
 
     private void OnTriggerEnter(Collider other)
     {
-        /*
-         * Ignore triggers when not flying.
-         */
-
         if (!isFlying)
             return;
 
-
-        /*
-         * Only react to objects tagged
-         * "Obstacle".
-         */
-
-        if (!other.gameObject.CompareTag("Obstacle"))
+        if (!other.gameObject.CompareTag(obstacleTag))
             return;
-
-
-        /*
-         * Calculate a direction pointing
-         * away from the obstacle.
-         */
 
         Vector3 hitNormal =
             transform.position -
             other.ClosestPoint(transform.position);
 
-
-        /*
-         * If the closest-point calculation
-         * produces an invalid direction,
-         * use the opposite flight direction.
-         */
-
         if (hitNormal.sqrMagnitude < 0.001f)
-        {
-            hitNormal =
-                -flightDirection;
-        }
+            hitNormal = -flightDirection;
 
-
-        HitObstacle(
-            hitNormal.normalized
-        );
+        HitObstacle(hitNormal.normalized);
     }
 
-
-    // =========================================================
-    // HIT OBSTACLE
-    // =========================================================
-
-    private void HitObstacle(
-        Vector3 hitNormal)
+    private void HitObstacle(Vector3 hitNormal)
     {
-        /*
-         * Prevent the obstacle from being
-         * processed more than once.
-         */
-
         if (hasMissedTarget)
             return;
-
 
         hasMissedTarget = true;
 
+        StopEntryRoutine();
 
-        /*
-         * Stop the normal Bullet Boy flight.
-         */
-
+        isEnteringCannon = false;
         isFlying = false;
-
         isInsideCannon = false;
 
         currentCannon = null;
-
         targetCannon = null;
 
-
-        /*
-         * Move the player slightly away from
-         * the obstacle before enabling physics.
-         *
-         * This prevents the player from remaining
-         * stuck inside the collider.
-         */
-
-        transform.position +=
-            hitNormal *
-            obstacleSeparation;
-
-
-        /*
-         * Switch from kinematic flight movement
-         * to real Rigidbody physics.
-         */
+        transform.position += hitNormal * obstacleSeparation;
 
         rb.isKinematic = false;
-
         rb.useGravity = true;
+        rb.interpolation = RigidbodyInterpolation.Interpolate;
+        rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
 
-        rb.interpolation =
-            RigidbodyInterpolation.Interpolate;
-
-        rb.collisionDetectionMode =
-            CollisionDetectionMode.Continuous;
-
-
-        /*
-         * Remove the previous movement.
-         */
+        rb.velocity = Vector3.zero;
+        rb.angularVelocity = Vector3.zero;
 
         rb.velocity =
-            Vector3.zero;
+            hitNormal * obstacleBounceForce +
+            flightDirection * obstacleForwardForce;
 
-        rb.angularVelocity =
-            Vector3.zero;
-
-
-        /*
-         * Give the player a small impact push.
-         *
-         * This creates the feeling that the
-         * Bullet Boy bounced off the obstacle.
-         */
-
-        Vector3 impactVelocity =
-            hitNormal *
-            obstacleBounceForce;
-
-
-        /*
-         * Keep a little of the original flight
-         * direction so the player doesn't simply
-         * stop in place.
-         */
-
-        impactVelocity +=
-            flightDirection *
-            obstacleForwardForce;
-
-
-        rb.velocity =
-            impactVelocity;
-
-
-        /*
-         * Add some rotation so the player
-         * doesn't look completely stiff while falling.
-         */
-
-        Vector3 tumbleAxis =
-            Vector3.Cross(
-                Vector3.up,
-                hitNormal
-            );
+        Vector3 tumbleAxis = Vector3.Cross(Vector3.up, hitNormal);
 
         if (tumbleAxis.sqrMagnitude < 0.001f)
-        {
             tumbleAxis = Vector3.right;
-        }
-
 
         rb.AddTorque(
-            tumbleAxis.normalized *
-            8f,
+            tumbleAxis.normalized * 8f,
             ForceMode.Impulse
         );
 
+        Debug.Log("BulletBoyPlayer: Hit obstacle and started falling.");
 
-        Debug.Log(
-            "BulletBoyPlayer: Hit obstacle and started falling."
-        );
-
-
-        /*
-         * Notify CannonManager using the
-         * same failure behavior as a missed cannon.
-         */
-
-        CannonManager manager =
-            FindObjectOfType<CannonManager>();
-
-
-        if (manager != null)
-        {
-            manager.PlayerMissedCannon();
-        }
-        else
-        {
-            Debug.LogWarning(
-                "BulletBoyPlayer: CannonManager not found."
-            );
-        }
-    }
-
-
-    // =========================================================
-    // CHECK TARGET CANNON
-    // =========================================================
-
-    private void CheckTargetCannon()
-    {
-        if (targetCannon == null)
-            return;
-
-
-        if (hasMissedTarget)
-            return;
-
-
-        Transform targetEntry =
-            targetCannon.GetEntryPoint();
-
-
-        if (targetEntry == null)
-            return;
-
-
-        /*
-         * First check whether the player
-         * successfully reached the cannon.
-         */
-
-        float distance =
-            Vector3.Distance(
-                transform.position,
-                targetEntry.position
-            );
-
-
-        if (distance <=
-            targetCannon.GetAimRadius())
-        {
-            EnterTargetCannon();
-
-            return;
-        }
-
-
-        /*
-         * Check whether the player has
-         * passed the target cannon.
-         *
-         * Dot product tells us whether
-         * the player is now beyond the
-         * target relative to the flight
-         * direction.
-         */
-
-        Vector3 targetToPlayer =
-            transform.position -
-            targetEntry.position;
-
-
-        float passedTarget =
-            Vector3.Dot(
-                targetToPlayer,
-                flightDirection
-            );
-
-
-        /*
-         * Player has passed the target
-         * without entering its aim radius.
-         */
-
-        if (passedTarget > 0f)
-        {
-            MissedTargetCannon();
-        }
+        if (Manager != null)
+            Manager.PlayerMissedCannon();
     }
 
 
@@ -818,78 +756,51 @@ public class BulletBoyPlayer : MonoBehaviour
         if (hasMissedTarget)
             return;
 
-
         hasMissedTarget = true;
 
-        isFlying = false;
+        StopEntryRoutine();
 
+        isEnteringCannon = false;
+        isFlying = false;
+        isInsideCannon = false;
+
+        currentCannon = null;
         targetCannon = null;
 
+        rb.isKinematic = false;
+        rb.useGravity = true;
+        rb.interpolation = RigidbodyInterpolation.Interpolate;
+        rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
 
-        Debug.Log(
-            "BulletBoyPlayer: Missed target cannon."
+        rb.velocity = Vector3.zero;
+        rb.angularVelocity = Vector3.zero;
+
+        rb.velocity =
+            flightDirection * missedCannonForwardSpeed +
+            Vector3.down * missedCannonDownwardSpeed;
+
+        Vector3 tumbleAxis = Vector3.Cross(Vector3.up, flightDirection);
+
+        if (tumbleAxis.sqrMagnitude < 0.001f)
+            tumbleAxis = Vector3.right;
+
+        rb.AddTorque(
+            tumbleAxis.normalized * missedCannonTorque,
+            ForceMode.Impulse
         );
 
+        Debug.Log("BulletBoyPlayer: Missed target cannon and started falling.");
 
-        CannonManager manager =
-            FindObjectOfType<CannonManager>();
-
-
-        if (manager != null)
-        {
-            manager.PlayerMissedCannon();
-        }
-        else
-        {
-            Debug.LogWarning(
-                "BulletBoyPlayer: CannonManager not found."
-            );
-        }
+        if (Manager != null)
+            Manager.PlayerMissedCannon();
     }
 
-
-    // =========================================================
-    // ENTER TARGET CANNON
-    // =========================================================
-
-    private void EnterTargetCannon()
+    private void StopEntryRoutine()
     {
-        if (targetCannon == null)
-            return;
-
-
-        BulletCannon cannon =
-            targetCannon;
-
-
-        targetCannon = null;
-
-        hasMissedTarget = false;
-
-
-        /*
-         * Enter the new cannon.
-         */
-
-        cannon.EnterCannon(
-            this
-        );
-
-
-        /*
-         * Tell manager that the player
-         * reached the next cannon.
-         */
-
-        CannonManager manager =
-            FindObjectOfType<CannonManager>();
-
-
-        if (manager != null)
+        if (cannonEntryCoroutine != null)
         {
-            manager.PlayerEnteredCannon(
-                cannon
-            );
+            StopCoroutine(cannonEntryCoroutine);
+            cannonEntryCoroutine = null;
         }
     }
 
@@ -898,20 +809,23 @@ public class BulletBoyPlayer : MonoBehaviour
     // TARGET CANNON
     // =========================================================
 
-    public void SetTargetCannon(
-        BulletCannon cannon)
+    public void SetTargetCannon(BulletCannon cannon)
     {
-        targetCannon =
-            cannon;
-
+        targetCannon = cannon;
         hasMissedTarget = false;
-    }
 
+        if (cannon != null)
+        {
+            Debug.Log(
+                "BulletBoyPlayer: Target cannon set to " +
+                cannon.gameObject.name
+            );
+        }
+    }
 
     public void ClearTargetCannon()
     {
         targetCannon = null;
-
         hasMissedTarget = false;
     }
 
@@ -925,18 +839,25 @@ public class BulletBoyPlayer : MonoBehaviour
         return isInsideCannon;
     }
 
+    public bool IsEnteringCannon()
+    {
+        return isEnteringCannon;
+    }
 
     public bool IsFlying()
     {
         return isFlying;
     }
 
+    public Vector3 GetPreviousFlightPosition()
+    {
+        return previousFlightPosition;
+    }
 
     public Vector3 GetFlightDirection()
     {
         return flightDirection;
     }
-
 
     public float GetFlightSpeed()
     {
