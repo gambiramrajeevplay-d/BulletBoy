@@ -189,7 +189,6 @@ public class CannonManager : MonoBehaviour
 
     private void PrintCannonOrder()
     {
-        Debug.Log("========== CANNON ORDER ==========");
 
         for (int i = 0; i < cannons.Length; i++)
         {
@@ -205,7 +204,6 @@ public class CannonManager : MonoBehaviour
             );
         }
 
-        Debug.Log("==================================");
     }
 
 
@@ -446,6 +444,125 @@ public class CannonManager : MonoBehaviour
 
         UpdateNextCannonUI();
     }
+
+    /// <summary>
+    /// Prepares the ordered NEXT cannon for an automatic cannon launch.
+    ///
+    /// Manual launches already call LaunchCurrentCannon(), which sets the
+    /// target before launching. Automatic cannons launch themselves, so they
+    /// need this same target setup immediately before LaunchPlayer().
+    /// </summary>
+    public bool PrepareAutomaticLaunch(BulletCannon launchingCannon)
+    {
+        if (levelFinished ||
+            launchingCannon == null ||
+            player == null ||
+            cannons == null ||
+            cannons.Length == 0)
+        {
+            return false;
+        }
+
+        int launchingIndex = -1;
+
+        for (int i = 0; i < cannons.Length; i++)
+        {
+            if (cannons[i] == launchingCannon)
+            {
+                launchingIndex = i;
+                break;
+            }
+        }
+
+        if (launchingIndex < 0)
+        {
+            Debug.LogError(
+                "CannonManager: Automatic launch cannon was not found in the sequence: " +
+                launchingCannon.gameObject.name
+            );
+
+            return false;
+        }
+
+        /*
+         * The player should already have entered this cannon, so the manager
+         * should already be on this sequence index.
+         *
+         * If the manager is one step behind because the automatic launch
+         * happens during the entry transition, synchronize it safely here.
+         */
+        if (currentCannonIndex != launchingIndex)
+        {
+            if (currentCannonIndex + 1 == launchingIndex)
+            {
+                currentCannonIndex = launchingIndex;
+
+                Debug.Log(
+                    "CannonManager: Synchronized automatic cannon index to " +
+                    launchingCannon.gameObject.name
+                );
+
+                UpdateNextCannonUI();
+            }
+            else
+            {
+                Debug.LogError(
+                    "CannonManager: Automatic launch sequence mismatch. " +
+                    "Current index = " + currentCannonIndex +
+                    ", launching cannon index = " + launchingIndex
+                );
+
+                return false;
+            }
+        }
+
+        int nextIndex = currentCannonIndex + 1;
+
+        /*
+         * If this is the final cannon, there is no target cannon.
+         */
+        if (nextIndex >= cannons.Length)
+        {
+            player.ClearTargetCannon();
+
+            Debug.Log(
+                "CannonManager: " +
+                launchingCannon.gameObject.name +
+                " is the final cannon."
+            );
+
+            return true;
+        }
+
+        BulletCannon nextCannon = cannons[nextIndex];
+
+        if (nextCannon == null)
+        {
+            Debug.LogError(
+                "CannonManager: Next cannon is NULL at index " +
+                nextIndex
+            );
+
+            return false;
+        }
+
+        /*
+         * THIS is the important line:
+         * the player now knows that Cannon 7 is the target before Cannon 6
+         * performs its automatic LaunchPlayer().
+         */
+        player.SetTargetCannon(nextCannon);
+
+        Debug.Log(
+            "CannonManager: Automatic launch " +
+            launchingCannon.gameObject.name +
+            " -> Target: " +
+            nextCannon.gameObject.name
+        );
+
+        return true;
+    }
+
 
     public void PlayerMissedCannon()
     {
