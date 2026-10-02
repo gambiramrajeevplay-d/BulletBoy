@@ -1,5 +1,19 @@
 using UnityEngine;
 
+/// <summary>
+/// Bullet Boy style bird.
+///
+/// Bird travels from +X toward -X.
+///
+/// Detection system:
+/// 1. Forward detection for cannons / obstacles.
+/// 2. DOWNWARD detection for moving cannons / obstacles underneath bird.
+/// 3. Predictive detection for moving cannons.
+/// 4. Full movement sphere/capsule sweep.
+/// 5. Final overlap protection.
+///
+/// The bird is never allowed to finish a frame inside a cannon or obstacle.
+/// </summary>
 public class BirdController : MonoBehaviour
 {
     // =========================================================
@@ -10,8 +24,184 @@ public class BirdController : MonoBehaviour
 
     [SerializeField] private float moveSpeed = 4f;
 
+    [SerializeField] private Vector3 moveDirection = Vector3.left;
+
+
+    // =========================================================
+    // ROTATION
+    // =========================================================
+
+    [Header("Locked Rotation")]
+
+    [SerializeField] private bool lockRotation = true;
+
     [SerializeField]
-    private Vector3 moveDirection = Vector3.left;
+    private Vector3 lockedEulerRotation =
+        new Vector3(0f, -103f, 0f);
+
+
+    // =========================================================
+    // NORMAL BIRD FLYING
+    // =========================================================
+
+    [Header("Up / Down Flying")]
+
+    [Tooltip("Normal bird vertical bob amount.")]
+    [SerializeField] private float verticalMovementAmount = 2.5f;
+
+    [Tooltip("Normal bird vertical bob speed.")]
+    [SerializeField] private float verticalMovementSpeed = 1.2f;
+
+    [Tooltip("Maximum vertical avoidance speed.")]
+    [SerializeField] private float avoidanceSpeed = 8f;
+
+    [Tooltip("Higher = faster response.")]
+    [SerializeField] private float verticalSmoothness = 8f;
+
+
+    // =========================================================
+    // CANNON / OBSTACLE DETECTION
+    // =========================================================
+
+    [Header("Cannon / Obstacle Detection")]
+
+    [SerializeField] private bool detectCannons = true;
+
+    [SerializeField] private bool detectObstacles = true;
+
+    [SerializeField] private string obstacleTag = "Obstacle";
+
+
+    // =========================================================
+    // FORWARD DETECTION
+    // =========================================================
+
+    [Header("Forward Detection")]
+
+    [Tooltip("How far ahead the bird searches.")]
+    [SerializeField] private float lookAheadDistance = 10f;
+
+    [Tooltip("Distance at which bird starts avoiding.")]
+    [SerializeField] private float brakeDistance = 5f;
+
+    [Tooltip("Minimum distance kept from cannon.")]
+    [SerializeField] private float stopDistance = 1f;
+
+    [Tooltip("Extra prediction distance.")]
+    [SerializeField] private float predictionDistance = 1.5f;
+
+
+    // =========================================================
+    // BIRD SAFETY RADIUS
+    // =========================================================
+
+    [Header("Bird Clearance")]
+
+    [Tooltip("Approximate radius of bird.")]
+    [SerializeField] private float clearanceRadius = 1.1f;
+
+    [Tooltip("Safety multiplier.")]
+    [SerializeField] private float safetyRadiusMultiplier = 1.2f;
+
+
+    // =========================================================
+    // DOWNWARD DETECTION
+    // =========================================================
+
+    [Header("DOWNWARD Cannon Detection")]
+
+    [Tooltip(
+        "Extra ray/cast looking DOWN from the bird. " +
+        "This detects moving cannons coming underneath."
+    )]
+    [SerializeField] private bool useDownwardDetection = true;
+
+    [Tooltip("How far below the bird to scan.")]
+    [SerializeField] private float downwardDetectionDistance = 5f;
+
+    [Tooltip("Radius of downward spherecast.")]
+    [SerializeField] private float downwardDetectionRadius = 0.9f;
+
+    [Tooltip("How much higher the bird should move when something is underneath.")]
+    [SerializeField] private float downwardAvoidanceHeight = 2.5f;
+
+    [Tooltip("How strongly the bird reacts to something underneath.")]
+    [SerializeField] private float downwardAvoidanceSpeed = 9f;
+
+
+    // =========================================================
+    // EXTRA SIDE DETECTION
+    // =========================================================
+
+    [Header("Side Safety Detection")]
+
+    [Tooltip("Additional left/right rays prevent the bird from clipping cannon edges.")]
+    [SerializeField] private bool useSideDetection = true;
+
+    [SerializeField] private float sideDetectionDistance = 2.5f;
+
+    [SerializeField] private float sideDetectionOffset = 0.8f;
+
+
+    // =========================================================
+    // HEIGHT SEARCH
+    // =========================================================
+
+    [Header("Height Search")]
+
+    [SerializeField] private float searchStep = 0.4f;
+
+    [SerializeField] private float maximumUp = 6f;
+
+    [SerializeField] private float maximumDown = 4f;
+
+    [SerializeField] private float minimumHeight = 1f;
+
+    [SerializeField] private float checkInterval = 0.03f;
+
+
+    // =========================================================
+    // MOVING CANNON PREDICTION
+    // =========================================================
+
+    [Header("Moving Cannon Prediction")]
+
+    [Tooltip(
+        "Predict where moving cannons will be shortly in the future."
+    )]
+    [SerializeField] private bool predictMovingCannons = true;
+
+    [Tooltip("How far into the future to predict.")]
+    [SerializeField] private float movingCannonPredictionTime = 0.15f;
+
+    [Tooltip("Extra safety distance for moving cannons.")]
+    [SerializeField] private float movingCannonSafetyPadding = 0.75f;
+
+
+    // =========================================================
+    // HARD COLLISION PROTECTION
+    // =========================================================
+
+    [Header("Hard Collision Protection")]
+
+    [SerializeField] private float sweepRadiusMultiplier = 1.2f;
+
+    [SerializeField] private float overlapRadiusMultiplier = 1.15f;
+
+    [SerializeField] private float collisionBuffer = 0.08f;
+
+    [SerializeField] private bool syncPhysicsTransforms = true;
+
+
+    // =========================================================
+    // STUCK
+    // =========================================================
+
+    [Header("Destroy When Completely Blocked")]
+
+    [SerializeField] private bool destroyIfNoWay = true;
+
+    [SerializeField] private float stuckDestroyTime = 1.5f;
 
 
     // =========================================================
@@ -23,108 +213,6 @@ public class BirdController : MonoBehaviour
     [SerializeField] private Animator animator;
 
     [SerializeField] private string flyAnimationName = "Fly";
-
-
-    // =========================================================
-    // ROTATION
-    // =========================================================
-
-    [Header("Rotation")]
-
-    [SerializeField] private bool rotateToMovementDirection = true;
-
-    [SerializeField] private float rotationSpeed = 8f;
-
-
-    // =========================================================
-    // NORMAL VERTICAL MOVEMENT
-    // =========================================================
-
-    [Header("Vertical Flying")]
-
-    [SerializeField] private float verticalMovementAmount = 4.5f;
-
-    [SerializeField] private float verticalMovementSpeed = 1.4f;
-
-    [SerializeField] private float verticalSmoothness = 5f;
-
-
-    // =========================================================
-    // CANNON DETECTION
-    // =========================================================
-
-    [Header("Cannon Detection")]
-
-    [SerializeField] private bool detectCannons = true;
-
-    [Tooltip("How far ahead the bird detects a cannon.")]
-    [SerializeField] private float cannonDetectionDistance = 8f;
-
-    [Tooltip("Radius of the detection sphere.")]
-    [SerializeField] private float cannonDetectionRadius = 1.5f;
-
-    [SerializeField] private LayerMask cannonDetectionLayers = ~0;
-
-
-    // =========================================================
-    // OBSTACLE DETECTION
-    // =========================================================
-
-    [Header("Obstacle Detection")]
-
-    [SerializeField] private bool detectObstacles = true;
-
-    [Tooltip("Tag used by objects that birds must avoid.")]
-    [SerializeField] private string obstacleTag = "Obstacle";
-
-    [Tooltip("How far ahead the bird detects obstacles.")]
-    [SerializeField] private float obstacleDetectionDistance = 8f;
-
-    [Tooltip("Radius of the obstacle detection sphere.")]
-    [SerializeField] private float obstacleDetectionRadius = 1.5f;
-
-    [SerializeField] private LayerMask obstacleDetectionLayers = ~0;
-
-
-    // =========================================================
-    // AVOIDANCE
-    // =========================================================
-
-    [Header("Bird Avoidance")]
-
-    [SerializeField] private float avoidanceHeight = 4f;
-
-    [SerializeField] private float avoidanceSpeed = 8f;
-
-    [SerializeField] private float returnSpeed = 3f;
-
-    [SerializeField] private float minimumAvoidanceDuration = 0.8f;
-
-    [SerializeField] private float emergencyAvoidanceDistance = 2.5f;
-
-    [SerializeField] private float emergencyAvoidanceSpeed = 14f;
-
-    [SerializeField] private float avoidanceCooldown = 0.25f;
-
-
-    // =========================================================
-    // AVOIDANCE LIMITS
-    // =========================================================
-
-    [Header("Avoidance Limits")]
-
-    [SerializeField] private float maximumUpAvoidance = 6f;
-
-    [SerializeField] private float maximumDownAvoidance = 4f;
-
-
-    // =========================================================
-    // MINIMUM HEIGHT
-    // =========================================================
-
-    [Header("Minimum Height")]
-
-    [SerializeField] private float minimumHeight = 1f;
 
 
     // =========================================================
@@ -145,7 +233,7 @@ public class BirdController : MonoBehaviour
 
 
     // =========================================================
-    // BIRD HIT / FALLING
+    // PLAYER HIT
     // =========================================================
 
     [Header("Bird Hit Falling")]
@@ -159,13 +247,36 @@ public class BirdController : MonoBehaviour
     [SerializeField] private float hitTorque = 8f;
 
 
-    // =========================================================
-    // HIT LIFETIME
-    // =========================================================
-
     [Header("Bird Hit Lifetime")]
 
     [SerializeField] private float hitDestroyDelay = 5f;
+
+
+    // =========================================================
+    // LEGACY / SPAWNER COMPATIBILITY
+    // =========================================================
+
+    [Header("Legacy Fields")]
+
+    [SerializeField] private float cannonDetectionDistance = 8f;
+
+    [SerializeField] private float cannonDetectionRadius = 1.5f;
+
+    [SerializeField] private LayerMask cannonDetectionLayers = ~0;
+
+    [SerializeField] private float obstacleDetectionDistance = 8f;
+
+    [SerializeField] private float obstacleDetectionRadius = 1.5f;
+
+    [SerializeField] private LayerMask obstacleDetectionLayers = ~0;
+
+    [SerializeField] private float avoidanceHeight = 4f;
+
+    [SerializeField] private float returnSpeed = 3f;
+
+    [SerializeField] private float minimumAvoidanceDuration = 0.8f;
+
+    [SerializeField] private float avoidanceCooldown = 0.25f;
 
 
     // =========================================================
@@ -176,46 +287,32 @@ public class BirdController : MonoBehaviour
 
     [SerializeField] private bool showRaycast = true;
 
-    [SerializeField] private bool showAvoidanceLogs = false;
+    [SerializeField] private bool showDownwardRay = true;
 
 
     // =========================================================
-    // PRIVATE MOVEMENT
+    // PRIVATE STATE
     // =========================================================
 
     private float actualSpeed;
 
-    private float verticalPhase;
-
     private float startingHeight;
 
-    private float targetAvoidanceOffset;
+    private float verticalPhase;
 
-    private float currentAvoidanceOffset;
+    private float currentY;
 
-    private bool avoidingObstacle;
+    private float targetY;
 
-    private float avoidanceTimer;
+    private float checkTimer;
 
-    private float avoidanceCooldownTimer;
+    private float stuckTimer;
 
-    private Vector3 lastMovementDirection;
+    private bool blockerAhead;
 
+    private float blockerDistance = float.MaxValue;
 
-    // =========================================================
-    // CURRENT OBSTACLE
-    // =========================================================
-
-    private Collider currentObstacle;
-
-    private float obstacleClearTimer;
-
-    private const float OBSTACLE_CLEAR_TIME = 0.25f;
-
-
-    // =========================================================
-    // HIT STATE
-    // =========================================================
+    private bool noGapFound;
 
     private bool hasBeenHit;
 
@@ -225,65 +322,82 @@ public class BirdController : MonoBehaviour
 
 
     // =========================================================
+    // DOWNWARD STATE
+    // =========================================================
+
+    private bool blockerBelow;
+
+    private float blockerBelowDistance = float.MaxValue;
+
+    private float emergencyTargetY;
+
+
+    // =========================================================
+    // BUFFERS
+    // =========================================================
+
+    private const int BUFFER_SIZE = 64;
+
+    private static readonly Collider[] overlapBuffer =
+        new Collider[BUFFER_SIZE];
+
+    private static readonly RaycastHit[] hitBuffer =
+        new RaycastHit[BUFFER_SIZE];
+
+
+    // =========================================================
     // START
     // =========================================================
 
     private void Start()
     {
-        // -----------------------------------------------------
-        // FORCE -X
-        // -----------------------------------------------------
+        // Force -X movement.
 
         if (moveDirection.sqrMagnitude < 0.001f)
-        {
             moveDirection = Vector3.left;
-        }
 
         moveDirection.y = 0f;
         moveDirection.z = 0f;
 
-        moveDirection.x = -Mathf.Abs(moveDirection.x);
+        moveDirection.x =
+            -Mathf.Abs(moveDirection.x);
 
         if (Mathf.Abs(moveDirection.x) < 0.001f)
-        {
             moveDirection = Vector3.left;
-        }
 
         moveDirection.Normalize();
 
 
-        // -----------------------------------------------------
-        // MOVEMENT
-        // -----------------------------------------------------
-
         actualSpeed = moveSpeed;
 
-        startingHeight = transform.position.y;
 
-        verticalPhase = Random.Range(
-            0f,
-            Mathf.PI * 2f
-        );
+        startingHeight =
+            transform.position.y;
 
-        lastMovementDirection = moveDirection;
+        currentY =
+            startingHeight;
+
+        targetY =
+            startingHeight;
+
+        emergencyTargetY =
+            startingHeight;
 
 
-        // -----------------------------------------------------
-        // ANIMATOR
-        // -----------------------------------------------------
+        verticalPhase =
+            Random.Range(
+                0.01f,
+                Mathf.PI * 2f);
+
 
         if (animator == null)
-        {
             animator =
                 GetComponentInChildren<Animator>();
-        }
 
 
-        // -----------------------------------------------------
-        // RIGIDBODY
-        // -----------------------------------------------------
+        rb =
+            GetComponent<Rigidbody>();
 
-        rb = GetComponent<Rigidbody>();
 
         if (rb != null)
         {
@@ -292,19 +406,18 @@ public class BirdController : MonoBehaviour
         }
 
 
-        // -----------------------------------------------------
-        // FLY ANIMATION
-        // -----------------------------------------------------
-
         if (animator != null &&
-            !string.IsNullOrEmpty(flyAnimationName))
+            !string.IsNullOrEmpty(
+                flyAnimationName))
         {
             animator.Play(
                 flyAnimationName,
                 0,
-                Random.Range(0f, 1f)
-            );
+                Random.Range(0f, 1f));
         }
+
+
+        ApplyLockedRotation();
     }
 
 
@@ -314,22 +427,29 @@ public class BirdController : MonoBehaviour
 
     private void Update()
     {
-        // Once hit, Rigidbody controls the bird.
         if (hasBeenHit)
         {
             UpdateHitLifetime();
             return;
         }
 
-        UpdateAvoidanceCooldown();
-
-        DetectObstacle();
 
         MoveBird();
 
-        RotateBird();
+        CheckStuck();
 
         CheckDestroyArea();
+    }
+
+
+    // =========================================================
+    // LATE UPDATE
+    // =========================================================
+
+    private void LateUpdate()
+    {
+        if (!hasBeenHit)
+            ApplyLockedRotation();
     }
 
 
@@ -339,207 +459,1434 @@ public class BirdController : MonoBehaviour
 
     private void FixedUpdate()
     {
-        if (!hasBeenHit)
+        if (!hasBeenHit ||
+            rb == null)
             return;
 
-        if (rb == null)
-            return;
 
         rb.AddForce(
-            Vector3.down * hitGravity,
-            ForceMode.Acceleration
-        );
+            Vector3.down *
+            hitGravity,
+            ForceMode.Acceleration);
     }
 
 
     // =========================================================
-    // DETECT OBSTACLE
+    // LOCK ROTATION
     // =========================================================
 
-    private void DetectObstacle()
+    private void ApplyLockedRotation()
     {
-        if (avoidingObstacle)
+        if (lockRotation)
         {
-            CheckCurrentObstacle();
-            return;
+            transform.rotation =
+                Quaternion.Euler(
+                    lockedEulerRotation);
         }
+    }
 
-        if (avoidanceCooldownTimer > 0f)
-            return;
 
-        Vector3 origin =
+    // =========================================================
+    // MAIN BIRD MOVEMENT
+    // =========================================================
+
+    private void MoveBird()
+    {
+        // Make moving/rotating cannon colliders
+        // match their current Transform.
+
+        if (syncPhysicsTransforms)
+            Physics.SyncTransforms();
+
+
+        Vector3 from =
             transform.position;
 
-        Vector3 direction =
-            moveDirection.normalized;
+
+        // =====================================================
+        // FORWARD DETECTION
+        // =====================================================
+
+        blockerDistance =
+            GetForwardBlockerDistance(
+                from,
+                moveDirection);
+
+
+        blockerAhead =
+            blockerDistance <
+            brakeDistance;
 
 
         // =====================================================
-        // CANNON
+        // DOWNWARD DETECTION
         // =====================================================
 
-        if (detectCannons)
+        blockerBelowDistance =
+            GetDownwardBlockerDistance(
+                from);
+
+
+        blockerBelow =
+            useDownwardDetection &&
+            blockerBelowDistance <
+            downwardDetectionDistance;
+
+
+        // =====================================================
+        // HORIZONTAL SPEED
+        // =====================================================
+
+        float speedFactor = 1f;
+
+
+        if (blockerAhead)
         {
-            Collider cannonCollider =
-                FindCannonAhead(
-                    origin,
-                    direction
-                );
+            speedFactor =
+                Mathf.Clamp01(
+                    (blockerDistance -
+                     stopDistance) /
+                    Mathf.Max(
+                        0.01f,
+                        brakeDistance -
+                        stopDistance));
+        }
 
-            if (cannonCollider != null)
+
+        float horizontalDistance =
+            actualSpeed *
+            speedFactor *
+            Time.deltaTime;
+
+
+        // =====================================================
+        // NORMAL TARGET POSITION
+        // =====================================================
+
+        Vector3 desiredPosition =
+            from;
+
+
+        desiredPosition.x +=
+            moveDirection.x *
+            horizontalDistance;
+
+
+        desiredPosition.y =
+            SmoothHeight(
+                desiredPosition);
+
+
+        // =====================================================
+        // MOVING CANNON BELOW
+        // =====================================================
+
+        if (blockerBelow)
+        {
+            /*
+             * A cannon is underneath the bird.
+             *
+             * Do NOT allow the bird to descend into it.
+             *
+             * Move upward immediately.
+             */
+
+            float requiredY =
+                from.y +
+                downwardAvoidanceHeight;
+
+
+            requiredY =
+                Mathf.Clamp(
+                    requiredY,
+                    minimumHeight,
+                    startingHeight +
+                    maximumUp);
+
+
+            emergencyTargetY =
+                Mathf.Max(
+                    emergencyTargetY,
+                    requiredY);
+
+
+            desiredPosition.y =
+                Mathf.MoveTowards(
+                    currentY,
+                    emergencyTargetY,
+                    downwardAvoidanceSpeed *
+                    Time.deltaTime);
+        }
+        else
+        {
+            emergencyTargetY =
+                desiredPosition.y;
+        }
+
+
+        // =====================================================
+        // SIDE DETECTION
+        // =====================================================
+
+        if (useSideDetection)
+        {
+            desiredPosition =
+                ApplySideSafety(
+                    from,
+                    desiredPosition);
+        }
+
+
+        // =====================================================
+        // MOVING CANNON PREDICTION
+        // =====================================================
+
+        if (predictMovingCannons)
+        {
+            desiredPosition =
+                ApplyMovingCannonPrediction(
+                    from,
+                    desiredPosition);
+        }
+
+
+        // =====================================================
+        // COMPLETE MOVEMENT SWEEP
+        // =====================================================
+
+        Vector3 delta =
+            desiredPosition -
+            from;
+
+
+        float distance =
+            delta.magnitude;
+
+
+        if (distance > 0.00001f)
+        {
+            Vector3 direction =
+                delta / distance;
+
+
+            float hitDistance =
+                SweepBird(
+                    from,
+                    direction,
+                    distance +
+                    predictionDistance);
+
+
+            if (hitDistance >= 0f)
             {
-                StartAvoidance(
-                    cannonCollider
-                );
+                float allowed =
+                    Mathf.Max(
+                        0f,
+                        hitDistance -
+                        collisionBuffer);
 
-                return;
+
+                desiredPosition =
+                    from +
+                    direction *
+                    Mathf.Min(
+                        allowed,
+                        distance);
             }
         }
 
 
         // =====================================================
-        // OBSTACLE
+        // FINAL POSITION CHECK
         // =====================================================
 
-        if (detectObstacles)
+        if (IsPositionBlocked(
+            desiredPosition))
         {
-            Collider obstacleCollider =
-                FindObstacleAhead(
-                    origin,
-                    direction
-                );
+            /*
+             * Destination is occupied.
+             *
+             * Try moving upward first.
+             */
 
-            if (obstacleCollider != null)
+            float safeY =
+                FindEmergencyHeight(
+                    from);
+
+
+            Vector3 emergencyPosition =
+                desiredPosition;
+
+
+            emergencyPosition.y =
+                safeY;
+
+
+            if (!IsPositionBlocked(
+                    emergencyPosition) &&
+                IsMovementSafe(
+                    from,
+                    emergencyPosition))
             {
-                StartAvoidance(
-                    obstacleCollider
-                );
+                desiredPosition =
+                    emergencyPosition;
+            }
+            else
+            {
+                /*
+                 * No safe route.
+                 *
+                 * STOP.
+                 *
+                 * Never move through the cannon.
+                 */
 
-                return;
+                desiredPosition =
+                    from;
             }
         }
+
+
+        // =====================================================
+        // FINAL ABSOLUTE GUARD
+        // =====================================================
+
+        if (IsPositionBlocked(
+            desiredPosition))
+        {
+            desiredPosition =
+                from;
+        }
+
+
+        // =====================================================
+        // APPLY
+        // =====================================================
+
+        currentY =
+            desiredPosition.y;
+
+
+        transform.position =
+            desiredPosition;
     }
 
 
     // =========================================================
-    // FIND CANNON
+    // FORWARD BLOCKER DETECTION
     // =========================================================
 
-    private Collider FindCannonAhead(
+    private float GetForwardBlockerDistance(
         Vector3 origin,
         Vector3 direction)
     {
-        RaycastHit[] hits =
-            Physics.SphereCastAll(
-                origin,
-                cannonDetectionRadius,
-                direction,
-                cannonDetectionDistance,
-                ~0,
-                QueryTriggerInteraction.Ignore
-            );
-
-        if (hits == null ||
-            hits.Length == 0)
-        {
-            return null;
-        }
-
-        float closestDistance =
+        float nearest =
             float.MaxValue;
 
-        Collider closestCollider = null;
 
-        foreach (RaycastHit hit in hits)
+        float radius =
+            GetSafeRadius();
+
+
+        float distance =
+            lookAheadDistance +
+            predictionDistance;
+
+
+        int mask =
+            GetDetectionMask();
+
+
+        // -----------------------------------------------------
+        // CENTER RAY
+        // -----------------------------------------------------
+
+        int hits =
+            Physics.RaycastNonAlloc(
+                origin,
+                direction,
+                hitBuffer,
+                distance,
+                mask,
+                QueryTriggerInteraction.Collide);
+
+
+        for (int i = 0;
+             i < hits;
+             i++)
         {
-            if (hit.collider == null)
+            if (!IsBlocker(
+                hitBuffer[i].collider))
                 continue;
 
-            if (ShouldIgnoreCollider(hit.collider))
+
+            nearest =
+                Mathf.Min(
+                    nearest,
+                    hitBuffer[i].distance);
+        }
+
+
+        // -----------------------------------------------------
+        // SPHERE CAST
+        // -----------------------------------------------------
+
+        hits =
+            Physics.SphereCastNonAlloc(
+                origin,
+                radius,
+                direction,
+                hitBuffer,
+                distance,
+                mask,
+                QueryTriggerInteraction.Collide);
+
+
+        for (int i = 0;
+             i < hits;
+             i++)
+        {
+            if (!IsBlocker(
+                hitBuffer[i].collider))
                 continue;
+
+
+            nearest =
+                Mathf.Min(
+                    nearest,
+                    hitBuffer[i].distance);
+        }
+
+
+        return nearest;
+    }
+
+
+    // =========================================================
+    // DOWNWARD DETECTION
+    // =========================================================
+
+    private float GetDownwardBlockerDistance(
+        Vector3 origin)
+    {
+        if (!useDownwardDetection)
+            return float.MaxValue;
+
+
+        float nearest =
+            float.MaxValue;
+
+
+        int mask =
+            GetDetectionMask();
+
+
+        // -----------------------------------------------------
+        // DOWNWARD RAY
+        // -----------------------------------------------------
+
+        RaycastHit rayHit;
+
+
+        if (Physics.Raycast(
+            origin,
+            Vector3.down,
+            out rayHit,
+            downwardDetectionDistance,
+            mask,
+            QueryTriggerInteraction.Collide))
+        {
+            if (IsBlocker(
+                rayHit.collider))
+            {
+                nearest =
+                    rayHit.distance;
+            }
+        }
+
+
+        // -----------------------------------------------------
+        // DOWNWARD SPHERECAST
+        // -----------------------------------------------------
+
+        float radius =
+            Mathf.Max(
+                0.05f,
+                downwardDetectionRadius);
+
+
+        int hits =
+            Physics.SphereCastNonAlloc(
+                origin,
+                radius,
+                Vector3.down,
+                hitBuffer,
+                downwardDetectionDistance,
+                mask,
+                QueryTriggerInteraction.Collide);
+
+
+        for (int i = 0;
+             i < hits;
+             i++)
+        {
+            if (!IsBlocker(
+                hitBuffer[i].collider))
+                continue;
+
+
+            nearest =
+                Mathf.Min(
+                    nearest,
+                    hitBuffer[i].distance);
+        }
+
+
+        return nearest;
+    }
+
+
+    // =========================================================
+    // SIDE SAFETY
+    // =========================================================
+
+    private Vector3 ApplySideSafety(
+        Vector3 from,
+        Vector3 desired)
+    {
+        float radius =
+            Mathf.Max(
+                0.05f,
+                clearanceRadius);
+
+
+        Vector3 leftOrigin =
+            from +
+            Vector3.forward *
+            sideDetectionOffset;
+
+
+        Vector3 rightOrigin =
+            from -
+            Vector3.forward *
+            sideDetectionOffset;
+
+
+        bool leftBlocked =
+            SideBlocked(
+                leftOrigin,
+                moveDirection,
+                sideDetectionDistance,
+                radius);
+
+
+        bool rightBlocked =
+            SideBlocked(
+                rightOrigin,
+                moveDirection,
+                sideDetectionDistance,
+                radius);
+
+
+        if (leftBlocked &&
+            !rightBlocked)
+        {
+            desired.y +=
+                avoidanceSpeed *
+                Time.deltaTime;
+        }
+        else if (rightBlocked &&
+                 !leftBlocked)
+        {
+            desired.y +=
+                avoidanceSpeed *
+                Time.deltaTime;
+        }
+
+
+        desired.y =
+            Mathf.Clamp(
+                desired.y,
+                minimumHeight,
+                startingHeight +
+                maximumUp);
+
+
+        return desired;
+    }
+
+
+    private bool SideBlocked(
+        Vector3 origin,
+        Vector3 direction,
+        float distance,
+        float radius)
+    {
+        int hits =
+            Physics.SphereCastNonAlloc(
+                origin,
+                radius,
+                direction,
+                hitBuffer,
+                distance,
+                GetDetectionMask(),
+                QueryTriggerInteraction.Collide);
+
+
+        for (int i = 0;
+             i < hits;
+             i++)
+        {
+            if (IsBlocker(
+                hitBuffer[i].collider))
+            {
+                return true;
+            }
+        }
+
+
+        return false;
+    }
+
+
+    // =========================================================
+    // MOVING CANNON PREDICTION
+    // =========================================================
+
+    private Vector3 ApplyMovingCannonPrediction(
+        Vector3 from,
+        Vector3 desired)
+    {
+        int mask =
+            GetDetectionMask();
+
+
+        Collider[] nearby =
+            overlapBuffer;
+
+
+        int count =
+            Physics.OverlapSphereNonAlloc(
+                from,
+                lookAheadDistance,
+                nearby,
+                mask,
+                QueryTriggerInteraction.Collide);
+
+
+        for (int i = 0;
+             i < count;
+             i++)
+        {
+            Collider collider =
+                nearby[i];
+
+
+            if (collider == null)
+                continue;
+
 
             BulletCannon cannon =
-                hit.collider.GetComponentInParent<BulletCannon>();
+                collider.GetComponentInParent<BulletCannon>();
+
 
             if (cannon == null)
                 continue;
 
-            if (hit.distance < closestDistance)
-            {
-                closestDistance =
-                    hit.distance;
 
-                closestCollider =
-                    hit.collider;
+            if (!cannon.IsMoving() &&
+                !cannon.IsRotating())
+            {
+                continue;
+            }
+
+
+            Vector3 currentPosition =
+                cannon.GetCurrentCannonPosition();
+
+
+            Vector3 previousPosition =
+                cannon.GetPreviousCannonPosition();
+
+
+            Vector3 movement =
+                currentPosition -
+                previousPosition;
+
+
+            /*
+             * Predict where the moving cannon will be.
+             */
+
+            Vector3 predictedPosition =
+                currentPosition +
+                movement *
+                (
+                    movingCannonPredictionTime /
+                    Mathf.Max(
+                        Time.deltaTime,
+                        0.001f)
+                );
+
+
+            Vector3 difference =
+                predictedPosition -
+                desired;
+
+
+            /*
+             * If the predicted cannon is close to the bird's
+             * intended position, move the bird upward.
+             */
+
+            float safety =
+                GetSafeRadius() +
+                movingCannonSafetyPadding;
+
+
+            if (difference.magnitude <
+                safety)
+            {
+                float requiredY =
+                    predictedPosition.y +
+                    safety;
+
+
+                if (requiredY >
+                    desired.y)
+                {
+                    desired.y =
+                        requiredY;
+                }
+            }
+
+
+            /*
+             * Moving up/down cannon:
+             *
+             * Check predicted vertical position.
+             */
+
+            if (cannon.IsMovingUpDown())
+            {
+                float verticalDifference =
+                    predictedPosition.y -
+                    desired.y;
+
+
+                if (verticalDifference >
+                    -safety &&
+                    verticalDifference <
+                    safety)
+                {
+                    desired.y =
+                        predictedPosition.y +
+                        safety;
+                }
             }
         }
 
-        return closestCollider;
+
+        desired.y =
+            Mathf.Clamp(
+                desired.y,
+                minimumHeight,
+                startingHeight +
+                maximumUp);
+
+
+        return desired;
     }
 
 
     // =========================================================
-    // FIND OBSTACLE
+    // SWEEP BIRD
     // =========================================================
 
-    private Collider FindObstacleAhead(
+    private float SweepBird(
         Vector3 origin,
-        Vector3 direction)
+        Vector3 direction,
+        float distance)
     {
-        RaycastHit[] hits =
-            Physics.SphereCastAll(
-                origin,
-                obstacleDetectionRadius,
-                direction,
-                obstacleDetectionDistance,
-                ~0,
-                QueryTriggerInteraction.Ignore
-            );
+        float radius =
+            Mathf.Max(
+                0.05f,
+                clearanceRadius *
+                sweepRadiusMultiplier);
 
-        if (hits == null ||
-            hits.Length == 0)
-        {
-            return null;
-        }
 
-        float closestDistance =
+        float nearest =
             float.MaxValue;
 
-        Collider closestCollider = null;
 
-        foreach (RaycastHit hit in hits)
+        int mask =
+            GetDetectionMask();
+
+
+        // -----------------------------------------------------
+        // SPHERE CAST
+        // -----------------------------------------------------
+
+        int hits =
+            Physics.SphereCastNonAlloc(
+                origin,
+                radius,
+                direction,
+                hitBuffer,
+                distance,
+                mask,
+                QueryTriggerInteraction.Collide);
+
+
+        for (int i = 0;
+             i < hits;
+             i++)
         {
-            if (hit.collider == null)
+            if (!IsBlocker(
+                hitBuffer[i].collider))
                 continue;
 
-            if (ShouldIgnoreCollider(hit.collider))
-                continue;
 
-            if (hit.collider.GetComponentInParent<BulletCannon>() != null)
-                continue;
-
-            if (!HasObstacleTagInHierarchy(
-                hit.collider.transform))
-            {
-                continue;
-            }
-
-            if (hit.distance < closestDistance)
-            {
-                closestDistance =
-                    hit.distance;
-
-                closestCollider =
-                    hit.collider;
-            }
+            nearest =
+                Mathf.Min(
+                    nearest,
+                    hitBuffer[i].distance);
         }
 
-        return closestCollider;
+
+        // -----------------------------------------------------
+        // CAPSULE CAST
+        // -----------------------------------------------------
+
+        float capsuleHeight =
+            Mathf.Max(
+                radius * 2f,
+                clearanceRadius * 2.5f);
+
+
+        float half =
+            Mathf.Max(
+                radius,
+                capsuleHeight * 0.5f);
+
+
+        Vector3 point1 =
+            origin +
+            Vector3.up *
+            (half - radius);
+
+
+        Vector3 point2 =
+            origin -
+            Vector3.up *
+            (half - radius);
+
+
+        hits =
+            Physics.CapsuleCastNonAlloc(
+                point1,
+                point2,
+                radius,
+                direction,
+                hitBuffer,
+                distance,
+                mask,
+                QueryTriggerInteraction.Collide);
+
+
+        for (int i = 0;
+             i < hits;
+             i++)
+        {
+            if (!IsBlocker(
+                hitBuffer[i].collider))
+                continue;
+
+
+            nearest =
+                Mathf.Min(
+                    nearest,
+                    hitBuffer[i].distance);
+        }
+
+
+        if (nearest ==
+            float.MaxValue)
+        {
+            return -1f;
+        }
+
+
+        return nearest;
     }
 
 
     // =========================================================
-    // CHECK TAG IN HIERARCHY
+    // MOVEMENT SAFETY
+    // =========================================================
+
+    private bool IsMovementSafe(
+        Vector3 from,
+        Vector3 to)
+    {
+        Vector3 delta =
+            to - from;
+
+
+        float distance =
+            delta.magnitude;
+
+
+        if (distance <= 0.00001f)
+            return true;
+
+
+        Vector3 direction =
+            delta / distance;
+
+
+        float hit =
+            SweepBird(
+                from,
+                direction,
+                distance);
+
+
+        return hit < 0f;
+    }
+
+
+    // =========================================================
+    // SMOOTH HEIGHT
+    // =========================================================
+
+    private float SmoothHeight(
+        Vector3 position)
+    {
+        checkTimer -=
+            Time.deltaTime;
+
+
+        if (checkTimer <= 0f)
+        {
+            checkTimer =
+                Mathf.Max(
+                    0.01f,
+                    checkInterval);
+
+
+            targetY =
+                FindBestHeight(
+                    position);
+        }
+
+
+        float smoothed =
+            Mathf.Lerp(
+                currentY,
+                targetY,
+                1f -
+                Mathf.Exp(
+                    -verticalSmoothness *
+                    Time.deltaTime));
+
+
+        float maxStep =
+            Mathf.Max(
+                0.01f,
+                avoidanceSpeed) *
+            Time.deltaTime;
+
+
+        return
+            currentY +
+            Mathf.Clamp(
+                smoothed -
+                currentY,
+                -maxStep,
+                maxStep);
+    }
+
+
+    // =========================================================
+    // FIND BEST HEIGHT
+    // =========================================================
+
+    private float FindBestHeight(
+        Vector3 position)
+    {
+        float wave =
+            startingHeight +
+            Mathf.Sin(
+                Time.time *
+                verticalMovementSpeed +
+                verticalPhase) *
+            verticalMovementAmount;
+
+
+        float low =
+            Mathf.Max(
+                startingHeight -
+                maximumDown,
+                minimumHeight);
+
+
+        float high =
+            startingHeight +
+            maximumUp;
+
+
+        wave =
+            Mathf.Clamp(
+                wave,
+                low,
+                high);
+
+
+        noGapFound = false;
+
+
+        float step =
+            Mathf.Max(
+                0.1f,
+                searchStep);
+
+
+        float bestY =
+            wave;
+
+
+        float bestCost =
+            float.MaxValue;
+
+
+        float bestClearDistance =
+            -1f;
+
+
+        float fallbackY =
+            wave;
+
+
+        int maxSteps =
+            Mathf.CeilToInt(
+                (high - low) /
+                step) + 1;
+
+
+        for (int i = 0;
+             i <= maxSteps;
+             i++)
+        {
+            int k =
+                (i + 1) / 2;
+
+
+            float sign =
+                i % 2 == 1
+                    ? 1f
+                    : -1f;
+
+
+            float y =
+                wave +
+                sign *
+                k *
+                step;
+
+
+            if (y < low ||
+                y > high)
+            {
+                continue;
+            }
+
+
+            float clearDistance;
+
+
+            if (IsHeightClear(
+                position,
+                y,
+                lookAheadDistance,
+                out clearDistance))
+            {
+                float cost =
+                    Mathf.Abs(
+                        y - wave) +
+                    0.5f *
+                    Mathf.Abs(
+                        y - currentY);
+
+
+                if (cost < bestCost)
+                {
+                    bestCost =
+                        cost;
+
+                    bestY =
+                        y;
+                }
+            }
+            else
+            {
+                if (clearDistance >
+                    bestClearDistance)
+                {
+                    bestClearDistance =
+                        clearDistance;
+
+                    fallbackY =
+                        y;
+                }
+            }
+        }
+
+
+        if (bestCost <
+            float.MaxValue)
+        {
+            return bestY;
+        }
+
+
+        noGapFound = true;
+
+        return fallbackY;
+    }
+
+
+    // =========================================================
+    // HEIGHT CLEAR
+    // =========================================================
+
+    private bool IsHeightClear(
+        Vector3 position,
+        float y,
+        float lookAhead,
+        out float clearDistance)
+    {
+        Vector3 origin =
+            new Vector3(
+                position.x,
+                y,
+                position.z);
+
+
+        float radius =
+            GetSafeRadius();
+
+
+        clearDistance =
+            lookAhead;
+
+
+        // -----------------------------------------------------
+        // POSITION CHECK
+        // -----------------------------------------------------
+
+        int overlaps =
+            Physics.OverlapSphereNonAlloc(
+                origin,
+                radius,
+                overlapBuffer,
+                GetDetectionMask(),
+                QueryTriggerInteraction.Collide);
+
+
+        for (int i = 0;
+             i < overlaps;
+             i++)
+        {
+            if (IsBlocker(
+                overlapBuffer[i]))
+            {
+                clearDistance = 0f;
+
+                return false;
+            }
+        }
+
+
+        // -----------------------------------------------------
+        // FORWARD CHECK
+        // -----------------------------------------------------
+
+        int hits =
+            Physics.SphereCastNonAlloc(
+                origin,
+                radius,
+                moveDirection,
+                hitBuffer,
+                lookAhead,
+                GetDetectionMask(),
+                QueryTriggerInteraction.Collide);
+
+
+        for (int i = 0;
+             i < hits;
+             i++)
+        {
+            if (!IsBlocker(
+                hitBuffer[i].collider))
+                continue;
+
+
+            clearDistance =
+                Mathf.Min(
+                    clearDistance,
+                    hitBuffer[i].distance);
+
+
+            return false;
+        }
+
+
+        // -----------------------------------------------------
+        // DOWNWARD CHECK AT CANDIDATE HEIGHT
+        // -----------------------------------------------------
+
+        if (useDownwardDetection)
+        {
+            float below =
+                GetDownwardBlockerDistance(
+                    origin);
+
+
+            if (below <
+                downwardDetectionDistance)
+            {
+                clearDistance =
+                    Mathf.Min(
+                        clearDistance,
+                        below);
+
+
+                return false;
+            }
+        }
+
+
+        return true;
+    }
+
+
+    // =========================================================
+    // POSITION BLOCK CHECK
+    // =========================================================
+
+    private bool IsPositionBlocked(
+        Vector3 position)
+    {
+        float radius =
+            clearanceRadius *
+            overlapRadiusMultiplier;
+
+
+        int count =
+            Physics.OverlapSphereNonAlloc(
+                position,
+                radius,
+                overlapBuffer,
+                GetDetectionMask(),
+                QueryTriggerInteraction.Collide);
+
+
+        for (int i = 0;
+             i < count;
+             i++)
+        {
+            if (IsBlocker(
+                overlapBuffer[i]))
+            {
+                return true;
+            }
+        }
+
+
+        return false;
+    }
+
+
+    // =========================================================
+    // EMERGENCY HEIGHT
+    // =========================================================
+
+    private float FindEmergencyHeight(
+        Vector3 position)
+    {
+        float low =
+            Mathf.Max(
+                startingHeight -
+                maximumDown,
+                minimumHeight);
+
+
+        float high =
+            startingHeight +
+            maximumUp;
+
+
+        float step =
+            Mathf.Max(
+                0.25f,
+                searchStep);
+
+
+        // Try above first.
+        for (float y = currentY;
+             y <= high;
+             y += step)
+        {
+            Vector3 test =
+                new Vector3(
+                    position.x,
+                    y,
+                    position.z);
+
+
+            if (!IsPositionBlocked(test) &&
+                IsHeightClear(
+                    position,
+                    y,
+                    lookAheadDistance,
+                    out _))
+            {
+                return y;
+            }
+        }
+
+
+        // Then below.
+        for (float y = currentY;
+             y >= low;
+             y -= step)
+        {
+            Vector3 test =
+                new Vector3(
+                    position.x,
+                    y,
+                    position.z);
+
+
+            if (!IsPositionBlocked(test) &&
+                IsHeightClear(
+                    position,
+                    y,
+                    lookAheadDistance,
+                    out _))
+            {
+                return y;
+            }
+        }
+
+
+        return currentY;
+    }
+
+
+    // =========================================================
+    // DETECTION MASK
+    // =========================================================
+
+    private int GetDetectionMask()
+    {
+        int mask = 0;
+
+
+        if (detectCannons)
+        {
+            mask |=
+                cannonDetectionLayers.value;
+        }
+
+
+        if (detectObstacles)
+        {
+            mask |=
+                obstacleDetectionLayers.value;
+        }
+
+
+        if (mask == 0)
+        {
+            mask =
+                Physics.AllLayers;
+        }
+
+
+        return mask;
+    }
+
+
+    // =========================================================
+    // SAFE RADIUS
+    // =========================================================
+
+    private float GetSafeRadius()
+    {
+        return Mathf.Max(
+            0.05f,
+            clearanceRadius *
+            safetyRadiusMultiplier);
+    }
+
+
+    // =========================================================
+    // BLOCKER
+    // =========================================================
+
+    private bool IsBlocker(
+        Collider collider)
+    {
+        if (collider == null)
+            return false;
+
+
+        if (ShouldIgnoreCollider(
+            collider))
+        {
+            return false;
+        }
+
+
+        // -----------------------------------------------------
+        // CANNON
+        // -----------------------------------------------------
+
+        if (detectCannons)
+        {
+            BulletCannon cannon =
+                collider.GetComponentInParent<BulletCannon>();
+
+
+            if (cannon != null)
+            {
+                return true;
+            }
+        }
+
+
+        // -----------------------------------------------------
+        // OBSTACLE
+        // -----------------------------------------------------
+
+        if (detectObstacles)
+        {
+            if (HasObstacleTagInHierarchy(
+                collider.transform))
+            {
+                return true;
+            }
+        }
+
+
+        return false;
+    }
+
+
+    // =========================================================
+    // OBSTACLE TAG
     // =========================================================
 
     private bool HasObstacleTagInHierarchy(
@@ -548,398 +1895,94 @@ public class BirdController : MonoBehaviour
         Transform current =
             target;
 
+
         while (current != null)
         {
-            if (current.CompareTag(obstacleTag))
+            if (current.CompareTag(
+                obstacleTag))
+            {
                 return true;
+            }
+
 
             current =
                 current.parent;
         }
 
+
         return false;
     }
 
 
     // =========================================================
-    // IGNORE COLLIDER
+    // IGNORE
     // =========================================================
 
     private bool ShouldIgnoreCollider(
-        Collider collider)
+        Collider other)
     {
-        if (collider == null)
+        if (other == null)
             return true;
 
-        if (collider.transform.root ==
+
+        // Own collider.
+        if (other.transform.root ==
             transform.root)
         {
             return true;
         }
 
-        if (collider.GetComponentInParent<BirdController>() != null)
+
+        // Other birds.
+        if (other.GetComponentInParent<BirdController>() != null)
         {
             return true;
         }
 
-        if (collider.GetComponentInParent<BulletBoyPlayer>() != null)
+
+        // Player.
+        if (other.GetComponentInParent<BulletBoyPlayer>() != null)
         {
             return true;
         }
+
 
         return false;
     }
 
 
     // =========================================================
-    // START AVOIDANCE
+    // STUCK
     // =========================================================
 
-    private void StartAvoidance(
-        Collider obstacle)
+    private void CheckStuck()
     {
-        if (obstacle == null)
+        if (!destroyIfNoWay)
             return;
 
-        avoidingObstacle = true;
 
-        avoidanceTimer = 0f;
+        bool stuck =
+            blockerAhead &&
+            noGapFound &&
+            blockerDistance <=
+            stopDistance + 0.25f;
 
-        obstacleClearTimer = 0f;
 
-        currentObstacle = obstacle;
-
-        float normalHeight =
-            GetNormalFlightHeight();
-
-        float heightDifference =
-            transform.position.y -
-            normalHeight;
-
-        if (heightDifference >= 0f)
+        if (stuck)
         {
-            targetAvoidanceOffset =
-                -Mathf.Abs(avoidanceHeight);
+            stuckTimer +=
+                Time.deltaTime;
+
+
+            if (stuckTimer >=
+                stuckDestroyTime)
+            {
+                Destroy(gameObject);
+            }
         }
         else
         {
-            targetAvoidanceOffset =
-                Mathf.Abs(avoidanceHeight);
-        }
-
-        float distance =
-            Vector3.Distance(
-                transform.position,
-                obstacle.ClosestPoint(
-                    transform.position
-                )
-            );
-
-        if (distance <=
-            emergencyAvoidanceDistance)
-        {
-            float emergencyHeight =
-                Mathf.Abs(avoidanceHeight) * 1.35f;
-
-            if (targetAvoidanceOffset > 0f)
-            {
-                targetAvoidanceOffset =
-                    Mathf.Min(
-                        emergencyHeight,
-                        maximumUpAvoidance
-                    );
-            }
-            else
-            {
-                targetAvoidanceOffset =
-                    -Mathf.Min(
-                        emergencyHeight,
-                        maximumDownAvoidance
-                    );
-            }
-        }
-
-        if (showAvoidanceLogs)
-        {
-            Debug.Log(
-                "Bird Avoidance Started: " +
-                obstacle.name
-            );
-        }
-    }
-
-
-    // =========================================================
-    // CHECK CURRENT OBSTACLE
-    // =========================================================
-
-    private void CheckCurrentObstacle()
-    {
-        if (currentObstacle == null)
-        {
-            FinishAvoidance();
-            return;
-        }
-
-        Vector3 closestPoint =
-            currentObstacle.ClosestPoint(
-                transform.position
-            );
-
-        float distance =
-            Vector3.Distance(
-                transform.position,
-                closestPoint
-            );
-
-        if (distance <=
-            obstacleDetectionRadius + 1f)
-        {
-            obstacleClearTimer = 0f;
-            return;
-        }
-
-        obstacleClearTimer +=
-            Time.deltaTime;
-
-        if (obstacleClearTimer >=
-            OBSTACLE_CLEAR_TIME)
-        {
-            FinishAvoidance();
-        }
-    }
-
-
-    // =========================================================
-    // FINISH AVOIDANCE
-    // =========================================================
-
-    private void FinishAvoidance()
-    {
-        avoidingObstacle = false;
-
-        targetAvoidanceOffset = 0f;
-
-        currentObstacle = null;
-
-        obstacleClearTimer = 0f;
-
-        avoidanceCooldownTimer =
-            avoidanceCooldown;
-    }
-
-
-    // =========================================================
-    // UPDATE AVOIDANCE
-    // =========================================================
-
-    private void UpdateAvoidance()
-    {
-        if (!avoidingObstacle)
-            return;
-
-        avoidanceTimer +=
-            Time.deltaTime;
-
-        if (avoidanceTimer <
-            minimumAvoidanceDuration)
-        {
-            return;
-        }
-
-        CheckCurrentObstacle();
-    }
-
-
-    // =========================================================
-    // UPDATE COOLDOWN
-    // =========================================================
-
-    private void UpdateAvoidanceCooldown()
-    {
-        if (avoidanceCooldownTimer <= 0f)
-            return;
-
-        avoidanceCooldownTimer -=
-            Time.deltaTime;
-    }
-
-
-    // =========================================================
-    // NORMAL HEIGHT
-    // =========================================================
-
-    private float GetNormalFlightHeight()
-    {
-        return startingHeight +
-               Mathf.Sin(
-                   Time.time *
-                   verticalMovementSpeed +
-                   verticalPhase
-               ) *
-               verticalMovementAmount;
-    }
-
-
-    // =========================================================
-    // MOVE BIRD
-    // =========================================================
-
-    private void MoveBird()
-    {
-        Vector3 forwardMovement =
-            moveDirection.normalized *
-            actualSpeed *
-            Time.deltaTime;
-
-        transform.position +=
-            forwardMovement;
-
-        float sineMovement =
-            Mathf.Sin(
-                Time.time *
-                verticalMovementSpeed +
-                verticalPhase
-            ) *
-            verticalMovementAmount;
-
-        UpdateAvoidance();
-
-        float desiredAvoidance =
-            avoidingObstacle
-                ? targetAvoidanceOffset
-                : 0f;
-
-        float verticalSpeed =
-            avoidingObstacle
-                ? avoidanceSpeed
-                : returnSpeed;
-
-        if (avoidingObstacle &&
-            currentObstacle != null)
-        {
-            float distance =
-                Vector3.Distance(
-                    transform.position,
-                    currentObstacle.ClosestPoint(
-                        transform.position
-                    )
-                );
-
-            if (distance <=
-                emergencyAvoidanceDistance)
-            {
-                verticalSpeed =
-                    emergencyAvoidanceSpeed;
-            }
-        }
-
-        currentAvoidanceOffset =
-            Mathf.MoveTowards(
-                currentAvoidanceOffset,
-                desiredAvoidance,
-                verticalSpeed *
-                Time.deltaTime
-            );
-
-        currentAvoidanceOffset =
-            Mathf.Clamp(
-                currentAvoidanceOffset,
-                -maximumDownAvoidance,
-                maximumUpAvoidance
-            );
-
-        float targetY =
-            startingHeight +
-            sineMovement +
-            currentAvoidanceOffset;
-
-        targetY =
-            Mathf.Max(
-                targetY,
-                minimumHeight
-            );
-
-        float smoothAmount =
-            avoidingObstacle
-                ? Mathf.Max(
-                    1f,
-                    verticalSmoothness
-                )
-                : verticalSmoothness;
-
-        float newY =
-            Mathf.Lerp(
-                transform.position.y,
-                targetY,
-                Mathf.Clamp01(
-                    smoothAmount *
-                    Time.deltaTime
-                )
-            );
-
-        transform.position =
-            new Vector3(
-                transform.position.x,
-                newY,
-                transform.position.z
-            );
-
-        lastMovementDirection =
-            moveDirection.normalized;
-    }
-
-
-    // =========================================================
-    // ROTATE BIRD
-    // =========================================================
-
-    private void RotateBird()
-    {
-        if (!rotateToMovementDirection)
-            return;
-
-        Vector3 direction =
-            lastMovementDirection;
-
-        float verticalVelocity =
-            Mathf.Cos(
-                Time.time *
-                verticalMovementSpeed +
-                verticalPhase
-            );
-
-        direction.y =
-            verticalVelocity * 0.35f;
-
-        if (Mathf.Abs(
-            currentAvoidanceOffset) > 0.05f)
-        {
-            float avoidanceDirection =
-                Mathf.Sign(
-                    currentAvoidanceOffset
-                );
-
-            direction.y +=
-                avoidanceDirection * 0.65f;
-        }
-
-        if (direction.sqrMagnitude >
-            0.001f)
-        {
-            Quaternion targetRotation =
-                Quaternion.LookRotation(
-                    direction.normalized,
-                    Vector3.up
-                );
-
-            transform.rotation =
-                Quaternion.Slerp(
-                    transform.rotation,
-                    targetRotation,
-                    rotationSpeed *
-                    Time.deltaTime
-                );
+            stuckTimer = 0f;
         }
     }
 
@@ -955,44 +1998,26 @@ public class BirdController : MonoBehaviour
         if (hasBeenHit)
             return;
 
+
         hasBeenHit = true;
 
         hitTimer = 0f;
 
-        avoidingObstacle = false;
-
-        targetAvoidanceOffset = 0f;
-
-        currentAvoidanceOffset = 0f;
-
-        currentObstacle = null;
-
-
-        // -----------------------------------------------------
-        // STOP FLY ANIMATION
-        // -----------------------------------------------------
 
         if (animator != null)
-        {
             animator.enabled = false;
-        }
 
 
-        // -----------------------------------------------------
-        // GET / CREATE RIGIDBODY
-        // -----------------------------------------------------
+        rb =
+            GetComponent<Rigidbody>();
 
-        rb = GetComponent<Rigidbody>();
 
         if (rb == null)
         {
-            rb = gameObject.AddComponent<Rigidbody>();
+            rb =
+                gameObject.AddComponent<Rigidbody>();
         }
 
-
-        // -----------------------------------------------------
-        // ENABLE PHYSICS
-        // -----------------------------------------------------
 
         rb.isKinematic = false;
 
@@ -1005,21 +2030,16 @@ public class BirdController : MonoBehaviour
             CollisionDetectionMode.Continuous;
 
 
-        // -----------------------------------------------------
-        // RESET
-        // -----------------------------------------------------
+        rb.velocity =
+            Vector3.zero;
 
-        rb.velocity = Vector3.zero;
+        rb.angularVelocity =
+            Vector3.zero;
 
-        rb.angularVelocity = Vector3.zero;
-
-
-        // -----------------------------------------------------
-        // DIRECTION
-        // -----------------------------------------------------
 
         Vector3 direction =
             playerFlightDirection;
+
 
         if (direction.sqrMagnitude <
             0.001f)
@@ -1028,42 +2048,32 @@ public class BirdController : MonoBehaviour
                 moveDirection;
         }
 
+
         direction.Normalize();
 
-
-        // -----------------------------------------------------
-        // SPEED
-        // -----------------------------------------------------
 
         float forwardSpeed =
             Mathf.Max(
                 hitForwardSpeed,
-                playerFlightSpeed * 0.25f
-            );
+                playerFlightSpeed *
+                0.25f);
 
-
-        // -----------------------------------------------------
-        // INITIAL FALL VELOCITY
-        // -----------------------------------------------------
 
         rb.velocity =
             direction *
             forwardSpeed;
+
 
         rb.velocity +=
             Vector3.down *
             hitDownwardSpeed;
 
 
-        // -----------------------------------------------------
-        // TUMBLE
-        // -----------------------------------------------------
-
         Vector3 tumbleAxis =
             Vector3.Cross(
                 Vector3.up,
-                direction
-            );
+                direction);
+
 
         if (tumbleAxis.sqrMagnitude <
             0.001f)
@@ -1072,11 +2082,11 @@ public class BirdController : MonoBehaviour
                 Vector3.right;
         }
 
+
         rb.AddTorque(
             tumbleAxis.normalized *
             hitTorque,
-            ForceMode.Impulse
-        );
+            ForceMode.Impulse);
     }
 
 
@@ -1089,8 +2099,10 @@ public class BirdController : MonoBehaviour
         if (hitDestroyDelay <= 0f)
             return;
 
+
         hitTimer +=
             Time.deltaTime;
+
 
         if (hitTimer >=
             hitDestroyDelay)
@@ -1106,31 +2118,34 @@ public class BirdController : MonoBehaviour
 
     private void CheckDestroyArea()
     {
-        if (!destroyOutsideSpawnArea)
+        if (!destroyOutsideSpawnArea ||
+            spawnArea == null)
+        {
             return;
+        }
 
-        if (spawnArea == null)
-            return;
-
-        Vector3 localPosition =
-            spawnArea.InverseTransformPoint(
-                transform.position
-            );
 
         float forwardPosition =
             Vector3.Dot(
                 transform.position -
                 spawnArea.position,
-                moveDirection.normalized
-            );
+                moveDirection.normalized);
+
 
         if (forwardPosition >
             spawnAreaWidth +
             destroyDistance)
         {
             Destroy(gameObject);
+
             return;
         }
+
+
+        Vector3 localPosition =
+            spawnArea.InverseTransformPoint(
+                transform.position);
+
 
         if (Mathf.Abs(
             localPosition.z) >
@@ -1143,7 +2158,7 @@ public class BirdController : MonoBehaviour
 
 
     // =========================================================
-    // SET DIRECTION
+    // PUBLIC SETTERS
     // =========================================================
 
     public void SetDirection(
@@ -1156,7 +2171,9 @@ public class BirdController : MonoBehaviour
             direction.z = 0f;
 
             direction.x =
-                -Mathf.Abs(direction.x);
+                -Mathf.Abs(
+                    direction.x);
+
 
             if (Mathf.Abs(
                 direction.x) <
@@ -1166,56 +2183,44 @@ public class BirdController : MonoBehaviour
                     Vector3.left;
             }
 
+
             moveDirection =
                 direction.normalized;
         }
     }
 
 
-    // =========================================================
-    // SET SPEED
-    // =========================================================
-
     public void SetSpeed(
         float speed)
     {
-        actualSpeed = speed;
+        actualSpeed =
+            speed;
     }
 
-
-    // =========================================================
-    // SET VERTICAL MOVEMENT
-    // =========================================================
 
     public void SetVerticalMovement(
         float amount,
         float speed)
     {
-        verticalMovementAmount =
-            amount;
+        if (amount > 0f)
+            verticalMovementAmount =
+                amount;
 
-        verticalMovementSpeed =
-            speed;
+
+        if (speed > 0f)
+            verticalMovementSpeed =
+                speed;
     }
 
-
-    // =========================================================
-    // RANDOM PHASE
-    // =========================================================
 
     public void RandomizeVerticalPhase()
     {
         verticalPhase =
             Random.Range(
-                0f,
-                Mathf.PI * 2f
-            );
+                0.01f,
+                Mathf.PI * 2f);
     }
 
-
-    // =========================================================
-    // SET CANNON DETECTION
-    // =========================================================
 
     public void SetCannonDetection(
         bool enabled,
@@ -1223,7 +2228,8 @@ public class BirdController : MonoBehaviour
         float radius,
         LayerMask layers)
     {
-        detectCannons = enabled;
+        detectCannons =
+            enabled;
 
         cannonDetectionDistance =
             distance;
@@ -1236,17 +2242,14 @@ public class BirdController : MonoBehaviour
     }
 
 
-    // =========================================================
-    // SET OBSTACLE DETECTION
-    // =========================================================
-
     public void SetObstacleDetection(
         bool enabled,
         float distance,
         float radius,
         LayerMask layers)
     {
-        detectObstacles = enabled;
+        detectObstacles =
+            enabled;
 
         obstacleDetectionDistance =
             distance;
@@ -1259,10 +2262,6 @@ public class BirdController : MonoBehaviour
     }
 
 
-    // =========================================================
-    // SET AVOIDANCE
-    // =========================================================
-
     public void SetAvoidanceSettings(
         float height,
         float speed,
@@ -1273,9 +2272,6 @@ public class BirdController : MonoBehaviour
         avoidanceHeight =
             height;
 
-        avoidanceSpeed =
-            speed;
-
         returnSpeed =
             returnSpeedValue;
 
@@ -1284,12 +2280,13 @@ public class BirdController : MonoBehaviour
 
         avoidanceCooldown =
             cooldown;
+
+
+        if (speed > 0f)
+            avoidanceSpeed =
+                speed;
     }
 
-
-    // =========================================================
-    // SET DESTROY
-    // =========================================================
 
     public void SetDestroySettings(
         Transform area,
@@ -1297,7 +2294,8 @@ public class BirdController : MonoBehaviour
         float depth,
         float destroyDistanceValue)
     {
-        spawnArea = area;
+        spawnArea =
+            area;
 
         spawnAreaWidth =
             Mathf.Abs(width);
@@ -1308,8 +2306,7 @@ public class BirdController : MonoBehaviour
         destroyDistance =
             Mathf.Max(
                 0f,
-                destroyDistanceValue
-            );
+                destroyDistanceValue);
     }
 
 
@@ -1322,8 +2319,6 @@ public class BirdController : MonoBehaviour
         if (!showRaycast)
             return;
 
-        Vector3 origin =
-            transform.position;
 
         Vector3 direction =
             moveDirection.sqrMagnitude >
@@ -1332,70 +2327,71 @@ public class BirdController : MonoBehaviour
                 : Vector3.left;
 
 
-        if (detectCannons)
+        // Bird radius.
+        Gizmos.color =
+            Color.yellow;
+
+
+        Gizmos.DrawWireSphere(
+            transform.position,
+            GetSafeRadius());
+
+
+        // Forward look.
+        Gizmos.color =
+            blockerAhead
+                ? Color.red
+                : Color.cyan;
+
+
+        Gizmos.DrawRay(
+            transform.position,
+            direction *
+            lookAheadDistance);
+
+
+        // -----------------------------------------------------
+        // DOWNWARD RAY
+        // -----------------------------------------------------
+
+        if (showDownwardRay &&
+            useDownwardDetection)
         {
             Gizmos.color =
-                Color.yellow;
+                blockerBelow
+                    ? Color.red
+                    : Color.green;
+
 
             Gizmos.DrawRay(
-                origin,
-                direction *
-                cannonDetectionDistance
-            );
-
-            Gizmos.DrawWireSphere(
-                origin +
-                direction *
-                cannonDetectionDistance,
-                cannonDetectionRadius
-            );
-        }
-
-
-        if (detectObstacles)
-        {
-            Gizmos.color =
-                Color.red;
-
-            Gizmos.DrawRay(
-                origin,
-                direction *
-                obstacleDetectionDistance
-            );
-
-            Gizmos.DrawWireSphere(
-                origin +
-                direction *
-                obstacleDetectionDistance,
-                obstacleDetectionRadius
-            );
-        }
-
-
-        if (avoidingObstacle)
-        {
-            Gizmos.color =
-                Color.green;
-
-            float normalHeight =
-                GetNormalFlightHeight();
-
-            Vector3 target =
-                transform.position;
-
-            target.y =
-                normalHeight +
-                targetAvoidanceOffset;
-
-            Gizmos.DrawLine(
                 transform.position,
-                target
-            );
+                Vector3.down *
+                downwardDetectionDistance);
+
 
             Gizmos.DrawWireSphere(
-                target,
-                0.3f
-            );
+                transform.position +
+                Vector3.down *
+                downwardDetectionDistance,
+                downwardDetectionRadius);
+        }
+
+
+        // Target Y.
+        if (Application.isPlaying)
+        {
+            Gizmos.color =
+                noGapFound
+                    ? Color.magenta
+                    : Color.green;
+
+
+            Gizmos.DrawWireSphere(
+                new Vector3(
+                    transform.position.x,
+                    targetY,
+                    transform.position.z),
+                0.25f);
         }
     }
 }

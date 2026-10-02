@@ -263,7 +263,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   moveSpeed: 4
   moveDirection: {x: -1, y: 0, z: 0}
-  animator: {fileID: 2419990855219737966}
+  animator: {fileID: 0}
   flyAnimationName: Fly
   rotateToMovementDirection: 1
   rotationSpeed: 8
@@ -282,14 +282,14 @@ MonoBehaviour:
   obstacleDetectionRadius: 1.5
   obstacleDetectionLayers:
     serializedVersion: 2
-    m_Bits: 4294967295
-  avoidanceHeight: 3.5
-  avoidanceSpeed: 6
-  returnSpeed: 3.5
+    m_Bits: 128
+  avoidanceHeight: 4
+  avoidanceSpeed: 8
+  returnSpeed: 3
   minimumAvoidanceDuration: 0.8
   emergencyAvoidanceDistance: 2.5
   emergencyAvoidanceSpeed: 14
-  avoidanceCooldown: 0.2
+  avoidanceCooldown: 0.25
   maximumUpAvoidance: 6
   maximumDownAvoidance: 4
   minimumHeight: 1
