@@ -60,6 +60,23 @@ public class BulletCannon : MonoBehaviour
 
 
     // =========================================================
+    // LAUNCH AUDIO
+    // =========================================================
+
+    [Header("Launch Audio")]
+
+    [Tooltip("AudioSource used to play the cannon launch sound.")]
+    [SerializeField] private AudioSource launchAudioSource;
+
+    [Tooltip("One-shot audio clip played when the player launches.")]
+    [SerializeField] private AudioClip launchAudioClip;
+
+    [Tooltip("Volume of the launch sound.")]
+    [Range(0f, 1f)]
+    [SerializeField] private float launchAudioVolume = 1f;
+
+
+    // =========================================================
     // ROTATION
     // =========================================================
 
@@ -324,6 +341,52 @@ public class BulletCannon : MonoBehaviour
     {
         ApplyRotation();
         CachePositions();
+
+        // Automatically create/configure an AudioSource if one
+        // hasn't been assigned in the Inspector.
+        SetupLaunchAudioSource();
+    }
+
+
+    // =========================================================
+    // AUDIO SOURCE SETUP
+    // =========================================================
+
+    private void SetupLaunchAudioSource()
+    {
+        if (launchAudioSource == null)
+        {
+            launchAudioSource = GetComponent<AudioSource>();
+
+            if (launchAudioSource == null)
+            {
+                launchAudioSource =
+                    gameObject.AddComponent<AudioSource>();
+            }
+        }
+
+        launchAudioSource.playOnAwake = false;
+        launchAudioSource.loop = false;
+        launchAudioSource.spatialBlend = 1f;
+    }
+
+
+    // =========================================================
+    // PLAY LAUNCH SOUND
+    // =========================================================
+
+    private void PlayLaunchSound()
+    {
+        if (launchAudioSource == null)
+            return;
+
+        if (launchAudioClip == null)
+            return;
+
+        launchAudioSource.PlayOneShot(
+            launchAudioClip,
+            Mathf.Clamp01(launchAudioVolume)
+        );
     }
 
 
@@ -611,13 +674,10 @@ public class BulletCannon : MonoBehaviour
         /*
          * FINAL CANNON:
          *
-         * Do NOT launch immediately.
-         *
-         * Sequence:
          * 1. Stretch
          * 2. Wait
          * 3. Big squash
-         * 4. Launch player
+         * 4. Launch player + sound
          * 5. Return cannon to normal
          */
         if (isFinalCannon)
@@ -633,10 +693,8 @@ public class BulletCannon : MonoBehaviour
             return;
         }
 
-        /*
-         * NORMAL CANNON:
-         * Launch immediately.
-         */
+        // NORMAL CANNON:
+        // Launch immediately.
         LaunchPlayerImmediately();
     }
 
@@ -667,10 +725,16 @@ public class BulletCannon : MonoBehaviour
         Quaternion launchRotation =
             GetCannonRotation();
 
+        // Particle
         SpawnLaunchParticle();
 
+        // Cannon visual effect
         PlayLaunchEffect();
 
+        // PLAY SOUND AT THE EXACT LAUNCH MOMENT
+        PlayLaunchSound();
+
+        // Launch player
         player.LaunchFromCannon(
             exitPoint,
             launchDirection,
@@ -697,27 +761,16 @@ public class BulletCannon : MonoBehaviour
             yield break;
         }
 
-        /*
-         * -----------------------------------------------------
-         * STEP 1
-         * BIG STRETCH
-         * -----------------------------------------------------
-         */
+        // =====================================================
+        // STEP 1 - BIG STRETCH
+        // =====================================================
 
         yield return PlayFinalStretchEffect();
 
 
-        /*
-         * -----------------------------------------------------
-         * STEP 2
-         * DELAY / HOLD
-         * -----------------------------------------------------
-         *
-         * The cannon stays stretched here.
-         *
-         * This creates the feeling that the cannon is
-         * charging before the final launch.
-         */
+        // =====================================================
+        // STEP 2 - DELAY / HOLD
+        // =====================================================
 
         yield return new WaitForSeconds(
             Mathf.Max(
@@ -727,47 +780,35 @@ public class BulletCannon : MonoBehaviour
         );
 
 
-        /*
-         * -----------------------------------------------------
-         * STEP 3
-         * BIG SQUASH
-         * -----------------------------------------------------
-         *
-         * The cannon rapidly compresses.
-         */
+        // =====================================================
+        // STEP 3 - BIG SQUASH
+        // =====================================================
 
         yield return PlayFinalSquashEffect();
 
 
-        /*
-         * -----------------------------------------------------
-         * STEP 4
-         * LAUNCH AT THE SQUASH MOMENT
-         * -----------------------------------------------------
-         */
+        // =====================================================
+        // STEP 4 - LAUNCH
+        // =====================================================
 
         if (player != null && exitPoint != null)
         {
             float speed =
                 GetLaunchSpeed();
 
-            /*
-             * IMPORTANT:
-             *
-             * Direction is read HERE, at the actual launch
-             * moment rather than before the stretch/delay.
-             *
-             * This keeps the launch direction correct even if
-             * the cannon is rotating.
-             */
             Vector3 launchDirection =
                 exitPoint.forward;
 
             Quaternion launchRotation =
                 GetCannonRotation();
 
+            // Particle
             SpawnLaunchParticle();
 
+            // PLAY SOUND AT THE EXACT FINAL LAUNCH MOMENT
+            PlayLaunchSound();
+
+            // Launch player
             player.LaunchFromCannon(
                 exitPoint,
                 launchDirection,
@@ -779,12 +820,9 @@ public class BulletCannon : MonoBehaviour
         }
 
 
-        /*
-         * -----------------------------------------------------
-         * STEP 5
-         * RETURN TO NORMAL
-         * -----------------------------------------------------
-         */
+        // =====================================================
+        // STEP 5 - RETURN TO NORMAL
+        // =====================================================
 
         yield return PlayFinalReturnEffect();
 
@@ -821,19 +859,12 @@ public class BulletCannon : MonoBehaviour
             normalScale.z *
             finalStretchAmount;
 
-        /*
-         * Start from normal.
-         */
         cannonVisual.localPosition =
             normalPosition;
 
         cannonVisual.localScale =
             normalScale;
 
-
-        /*
-         * Stretch the cannon.
-         */
         yield return AnimateVisual(
             normalPosition,
             stretchPosition,
@@ -877,15 +908,6 @@ public class BulletCannon : MonoBehaviour
             originalVisualScale.z *
             finalSquashAmount;
 
-        /*
-         * VERY FAST transition:
-         *
-         * STRETCH
-         *      ↓
-         * BIG SQUASH
-         *
-         * The player launches immediately after this.
-         */
         yield return AnimateVisual(
             stretchPosition,
             squashPosition,
