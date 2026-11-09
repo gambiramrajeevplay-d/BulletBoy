@@ -1151,7 +1151,6 @@ GameObject:
   - component: {fileID: 2005901083364142304}
   - component: {fileID: 2005901083364142307}
   - component: {fileID: 2005901083364142305}
-  - component: {fileID: 2005901083364142310}
   m_Layer: 0
   m_Name: Player_4
   m_TagString: Player
@@ -1254,19 +1253,6 @@ MonoBehaviour:
   missedCannonForwardSpeed: 4
   missedCannonDownwardSpeed: 2
   missedCannonTorque: 8
---- !u!114 &2005901083364142310
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2005901083364142306}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c12738f832f9457448173003360e4d4f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  coinClip: {fileID: 0}
 --- !u!1 &2093438837457660483
 GameObject:
   m_ObjectHideFlags: 0
