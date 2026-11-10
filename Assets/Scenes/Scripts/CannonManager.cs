@@ -1,5 +1,7 @@
 ﻿using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using TMPro;
 using UnityEngine.UI;
@@ -33,6 +35,9 @@ public class CannonManager : MonoBehaviour
     [Header("Input")]
     [Tooltip("A tap that happens while the player is still entering a cannon is remembered for this long (seconds). Set 0 to disable.")]
     [SerializeField] private float inputBufferTime = 0.12f;
+
+    [Tooltip("Pressing Escape (Android / Fire TV Back button) pauses and resumes the game.")]
+    [SerializeField] private bool escapeTogglesPause = true;
 
     [Header("Level Result Panels")]
     [SerializeField] private GameObject levelPassPanel;
@@ -94,6 +99,10 @@ public class CannonManager : MonoBehaviour
 
     // True once the player exists and the first cannon has been entered.
     private bool levelStarted;
+
+    // Reused list for UI raycasts (avoids allocating every tap).
+    private static readonly List<RaycastResult> uiRaycastResults =
+        new List<RaycastResult>();
 
 
     // =========================================================
@@ -326,6 +335,18 @@ public class CannonManager : MonoBehaviour
 
     private void Update()
     {
+        // Escape / Android Back toggles pause. Handled first so it still
+        // works while paused (Update keeps running at timeScale 0).
+        if (escapeTogglesPause && Input.GetKeyDown(KeyCode.Escape))
+        {
+            if (isPaused)
+                ResumeButton();
+            else
+                PauseGame();
+
+            return;
+        }
+
         if (levelFinished || isPaused || player == null || !levelStarted)
             return;
 
@@ -357,9 +378,7 @@ public class CannonManager : MonoBehaviour
 
     private bool ReadPressed()
     {
-        if (Input.GetMouseButtonDown(0))
-            return true;
-
+        // Keyboard / gamepad (never UI taps).
         if (Input.GetKeyDown(KeyCode.Space))
             return true;
 
@@ -372,13 +391,63 @@ public class CannonManager : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.JoystickButton0))
             return true;
 
-        if (Input.touchCount > 0 &&
-            Input.GetTouch(0).phase == TouchPhase.Began)
+        // Touch. On mobile Unity also simulates a mouse click for every
+        // touch, so when touches exist the mouse check below is skipped.
+        if (Input.touchCount > 0)
         {
+            for (int i = 0; i < Input.touchCount; i++)
+            {
+                Touch touch = Input.GetTouch(i);
+
+                if (touch.phase != TouchPhase.Began)
+                    continue;
+
+                // A tap on the Pause button (or any UI button) must not launch.
+                if (IsPointerOverButton(touch.position))
+                    continue;
+
+                return true;
+            }
+
+            return false;
+        }
+
+        // Mouse (editor / PC).
+        if (Input.GetMouseButtonDown(0))
+        {
+            if (IsPointerOverButton(Input.mousePosition))
+                return false;
+
             return true;
         }
 
         return false;
+    }
+
+    // True when the topmost UI element under the screen position belongs to
+    // a Button / Toggle / Slider etc. Plain non-interactive overlays do NOT
+    // block gameplay taps.
+    private bool IsPointerOverButton(Vector2 screenPosition)
+    {
+        if (EventSystem.current == null)
+            return false;
+
+        PointerEventData pointerData =
+            new PointerEventData(EventSystem.current)
+            {
+                position = screenPosition
+            };
+
+        uiRaycastResults.Clear();
+        EventSystem.current.RaycastAll(pointerData, uiRaycastResults);
+
+        if (uiRaycastResults.Count == 0)
+            return false;
+
+        GameObject topHit = uiRaycastResults[0].gameObject;
+
+        return topHit != null &&
+               topHit.GetComponentInParent<Selectable>() != null;
     }
 
 
