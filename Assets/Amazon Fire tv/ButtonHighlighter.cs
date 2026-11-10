@@ -1,10 +1,14 @@
-﻿using System.Collections;
+﻿
+using Script;
+using System.Collections;
 using System.Collections.Generic;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.EventSystems;
-using UnityEngine.UI;
 using UnityEngine.SceneManagement;
-using Script;
+using UnityEngine.UI;
+
+
 public class ButtonHighlighter : MonoBehaviour
 {
     private Button previousButton;
@@ -83,11 +87,12 @@ public class ButtonHighlighter : MonoBehaviour
         if (selectedAsButton == null)
             return;
 
-        if (MainUI.Instance != null)
-            MainUI.Instance.SelectedObj = selectedAsButton.gameObject;
-
         if (levelSelection && MainUI.Instance != null)
-            MainUI.Instance.Content_move();
+        {
+            MainUI.Instance.UpdateSelectedLevel(
+                selectedAsButton.gameObject
+            );
+        }
     }
 
     public static GameObject FindGameObjectInChildWithTag(GameObject parent, string tag)

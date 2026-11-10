@@ -171,7 +171,8 @@ public class MainUI : MonoBehaviour
             return;
         }
     }
-
+    private float contentStartY;
+private bool contentPositionInitialized = false;
     private void Start()
     {
         InitializeLobbyAd();
@@ -183,7 +184,11 @@ public class MainUI : MonoBehaviour
         UpdateSoundUI();
         UpdateLevelButtonsUI();
         UpdateTotalCoins();
-
+        if (content != null)
+        {
+            contentStartY = content.anchoredPosition.y;
+            contentPositionInitialized = true;
+        }
         StartCoroutine(RefreshBonusRewardIndicatorNextFrame());
 
         if (!PlayerPrefs.HasKey("PopUpCounter"))
@@ -926,6 +931,24 @@ public class MainUI : MonoBehaviour
         }
     }
 
+    // Close Unlock All Levels Panel
+    public void CloseUnlockAllLevelsPanel()
+    {
+        if (unlockAllLevelsPanel != null)
+        {
+            unlockAllLevelsPanel.SetActive(false);
+        }
+
+        if (levelSelection != null)
+        {
+            levelSelection.SetActive(true);
+        }
+
+        UpdateLevelButtonsUI();
+        UpdateTotalCoins();
+    }
+
+
     public void LevelSelectionbackButton()
     {
         OpenCarControllerPanel();
@@ -1071,24 +1094,68 @@ public class MainUI : MonoBehaviour
 
     // ======================== LEVEL CONTENT MOVEMENT ========================
 
+
+    public void UpdateSelectedLevel(GameObject selectedObject)
+    {
+        if (selectedObject == null)
+            return;
+
+        if (lvlButtonsUI == null || positions == null)
+            return;
+
+        // Find which array element matches the selected GameObject.
+        for (int i = 0; i < lvlButtonsUI.Length; i++)
+        {
+            if (lvlButtonsUI[i] == null ||
+                lvlButtonsUI[i].button == null)
+                continue;
+
+            if (lvlButtonsUI[i].button.gameObject == selectedObject)
+            {
+                // Selected index is the button's array index.
+                selectedIndex = i;
+
+                // Store the selected object.
+                SelectedObj = selectedObject;
+
+                // Move content to the matching position.
+                Content_move();
+
+                Debug.Log(
+                    "Selected Index: " + selectedIndex +
+                    " | Target Y: " + positions[selectedIndex]
+                );
+
+                return;
+            }
+        }
+    }
+
     public void Content_move()
     {
-        if (positions == null || positions.Length == 0 ||
-            selectedIndex < 0 || selectedIndex >= positions.Length ||
-            content == null)
-        {
+        if (content == null ||
+            positions == null ||
+            positions.Length == 0)
             return;
-        }
 
-        Vector2 targetPosition = new Vector2(
-            content.anchoredPosition.x,
-            positions[selectedIndex]);
+        if (selectedIndex < 0 ||
+            selectedIndex >= positions.Length)
+            return;
 
-        content.anchoredPosition = Vector2.Lerp(
-            content.anchoredPosition,
-            targetPosition,
-            smoothSpeed * Time.deltaTime);
+        float targetY = positions[selectedIndex];
+
+        Vector2 currentPosition = content.anchoredPosition;
+
+        currentPosition.y = Mathf.Lerp(
+            currentPosition.y,
+            targetY,
+            smoothSpeed * Time.unscaledDeltaTime
+        );
+
+        content.anchoredPosition = currentPosition;
     }
+
+
 
     public void SelectNext()
     {

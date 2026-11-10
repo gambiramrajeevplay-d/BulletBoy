@@ -1,6 +1,7 @@
 
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -27,7 +28,6 @@ public class SpinWheelManager : MonoBehaviour
     private int extraSpinsAvailable = 0;
 
     [Header("Wheel Alignment")]
-    [Tooltip("Angle correction for aligning the reward center with the pointer. Start with 0 and adjust if needed.")]
     public float rewardCenterOffset = 0f;
 
     [Header("Spin Settings")]
@@ -52,6 +52,11 @@ public class SpinWheelManager : MonoBehaviour
     public GameObject visitAgain;
     public float visitAgainDuration = 3f;
 
+    [Header("Restricted Wheel Results")]
+    public float[] allowedAngles = { 0f, 50f, 85f, 171f, 260f };
+    public string coinRewardKeyword = "Coin";
+    public string betterLuckRewardName = "Better Luck Next Time";
+
     [Header("Testing")]
     public bool forceSpinAgainReward = false;
 
@@ -73,16 +78,9 @@ public class SpinWheelManager : MonoBehaviour
             return;
         }
 
-        if (rewards == null || rewards.Length == 0)
+        if (rewards == null || rewards.Length < 2)
         {
-            Debug.LogError("SpinWheelManager: Add at least one reward.");
-            enabled = false;
-            return;
-        }
-
-        if (rewards.Length < 2)
-        {
-            Debug.LogError("SpinWheelManager: Add at least two reward sections.");
+            Debug.LogError("SpinWheelManager: Add at least two rewards.");
             enabled = false;
             return;
         }
@@ -133,12 +131,11 @@ public class SpinWheelManager : MonoBehaviour
         if (isSpinning)
             return;
 
-        if (rewards == null || rewards.Length < 2)
-            return;
-
         CheckDailySpin();
 
-        if (hasSpunToday && extraSpinsAvailable <= 0 && !(enableTesting && allowSpinAgainInTesting))
+        if (hasSpunToday &&
+            extraSpinsAvailable <= 0 &&
+            !(enableTesting && allowSpinAgainInTesting))
         {
             UpdateDailySpinUI();
 
@@ -183,46 +180,109 @@ public class SpinWheelManager : MonoBehaviour
 
         visitAgain.SetActive(false);
     }
+
+    private bool IsAllowedReward(WheelReward reward)
+    {
+        if (reward == null || string.IsNullOrEmpty(reward.rewardName))
+            return false;
+
+        bool isCoin = reward.rewardName.IndexOf(
+            coinRewardKeyword,
+            StringComparison.OrdinalIgnoreCase
+        ) >= 0;
+
+        bool isBetterLuck = string.Equals(
+            reward.rewardName.Trim(),
+            betterLuckRewardName.Trim(),
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        return isCoin || isBetterLuck;
+    }
+
     private IEnumerator SpinRoutine()
     {
         isSpinning = true;
         UpdateDailySpinUI();
 
-        //int rewardIndex = UnityEngine.Random.Range(0, rewards.Length);
+        List<int> validRewardIndexes = new List<int>();
+        List<float> validAngles = new List<float>();
 
+        float sectionAngle = 360f / rewards.Length;
 
-        // this is for testing spin again reward to check the spin indicator activating or not in main ui
-        int rewardIndex;
+        // Find only the allowed reward sections.
+
+        foreach (float angle in allowedAngles)
+        {
+            float normalizedAngle = Mathf.Repeat(angle, 360f);
+
+            int mappedIndex = Mathf.RoundToInt(
+                Mathf.Repeat(
+                    normalizedAngle - initialWheelAngle - rewardCenterOffset,
+                    360f
+                ) / sectionAngle
+            ) % rewards.Length;
+
+            if (IsAllowedReward(rewards[mappedIndex]))
+            {
+                validRewardIndexes.Add(mappedIndex);
+                validAngles.Add(normalizedAngle);
+
+                Debug.Log(
+                    "Allowed Angle: " + normalizedAngle +
+                    " | Reward: " + rewards[mappedIndex].rewardName
+                );
+            }
+        }
+
+        if (validRewardIndexes.Count == 0)
+        {
+            Debug.LogError(
+                "No valid Coins or Better Luck Next Time rewards " +
+                "found at the specified angles."
+            );
+
+            isSpinning = false;
+            UpdateDailySpinUI();
+            yield break;
+        }
+
+        int selectedIndex = UnityEngine.Random.Range(
+            0,
+            validRewardIndexes.Count
+        );
+
+        int selectedRewardIndex = validRewardIndexes[selectedIndex];
+
+        float desiredAngle = validAngles[selectedIndex];
+
+        // Testing option: force Spin Again reward.
 
         if (forceSpinAgainReward)
         {
-            rewardIndex = Array.FindIndex(
+            selectedRewardIndex = Array.FindIndex(
                 rewards,
-                reward => string.Equals(
+                reward => reward != null &&
+                string.Equals(
                     reward.rewardName.Trim(),
                     spinAgainRewardName.Trim(),
                     StringComparison.OrdinalIgnoreCase
                 )
             );
 
-            if (rewardIndex < 0)
+            if (selectedRewardIndex < 0)
             {
-                Debug.LogError("SpinWheelManager: Spin Again reward not found in rewards array.");
+                Debug.LogError("Spin Again reward not found.");
+
                 isSpinning = false;
                 UpdateDailySpinUI();
                 yield break;
             }
-        }
-        else
-        {
-            rewardIndex = UnityEngine.Random.Range(0, rewards.Length);
-        }
 
-        float sectionAngle = 360f / rewards.Length;
-
-        float desiredAngle = initialWheelAngle
-                             + rewardIndex * sectionAngle
-                             + rewardCenterOffset;
+            desiredAngle = initialWheelAngle +
+                selectedRewardIndex * sectionAngle +
+                rewardCenterOffset;
+        }
 
         float startAngle = wheel.localEulerAngles.z;
 
@@ -231,21 +291,22 @@ public class SpinWheelManager : MonoBehaviour
             360f
         );
 
-        // Calculate the distance needed for the complete spin.
         float minimumAngle = fullRotations * 360f + extraAngle;
 
-        // Use Inspector rotation speed to calculate the rotation distance.
-        // The wheel always completes at least the requested full rotations.
         float speedBasedAngle = rotationSpeed * spinDuration * 0.5f;
 
-        float totalRotation = Mathf.Max(minimumAngle, speedBasedAngle);
+        float totalRotation = Mathf.Max(
+            minimumAngle,
+            speedBasedAngle
+        );
 
-        // Keep the selected reward aligned with the pointer.
         totalRotation = extraAngle +
-                        Mathf.Max(
-                            fullRotations * 360f,
-                            Mathf.Ceil((totalRotation - extraAngle) / 360f) * 360f
-                        );
+            Mathf.Max(
+                fullRotations * 360f,
+                Mathf.Ceil(
+                    (totalRotation - extraAngle) / 360f
+                ) * 360f
+            );
 
         float targetAngle = startAngle + totalRotation;
 
@@ -255,10 +316,14 @@ public class SpinWheelManager : MonoBehaviour
         {
             elapsed += Time.deltaTime;
 
-            float progress = Mathf.Clamp01(elapsed / spinDuration);
+            float progress = Mathf.Clamp01(
+                elapsed / spinDuration
+            );
 
-            // Start at the configured speed and gradually slow down.
-            float easedProgress = 1f - Mathf.Pow(1f - progress, 4f);
+            float easedProgress = 1f - Mathf.Pow(
+                1f - progress,
+                4f
+            );
 
             float angle = Mathf.Lerp(
                 startAngle,
@@ -289,13 +354,18 @@ public class SpinWheelManager : MonoBehaviour
             targetAngle
         );
 
-        WheelReward selectedReward = rewards[rewardIndex];
+        WheelReward selectedReward = rewards[selectedRewardIndex];
 
         bool isSpinAgain = string.Equals(
             selectedReward.rewardName.Trim(),
             spinAgainRewardName.Trim(),
             StringComparison.OrdinalIgnoreCase
         );
+
+        bool isCoinReward = selectedReward.rewardName.IndexOf(
+            coinRewardKeyword,
+            StringComparison.OrdinalIgnoreCase
+        ) >= 0;
 
         if (isSpinAgain)
         {
@@ -305,7 +375,7 @@ public class SpinWheelManager : MonoBehaviour
                 MainUI.Instance.UpdateSpinIndicator();
         }
 
-        if (selectedReward.rewardAmount > 0)
+        if (isCoinReward && selectedReward.rewardAmount > 0)
         {
             totalCoins = PlayerPrefs.GetInt(
                 coinPlayerPrefsKey,
@@ -314,7 +384,11 @@ public class SpinWheelManager : MonoBehaviour
 
             totalCoins += selectedReward.rewardAmount;
 
-            PlayerPrefs.SetInt(coinPlayerPrefsKey, totalCoins);
+            PlayerPrefs.SetInt(
+                coinPlayerPrefsKey,
+                totalCoins
+            );
+
             PlayerPrefs.Save();
 
             if (MainUI.Instance != null)
@@ -323,8 +397,9 @@ public class SpinWheelManager : MonoBehaviour
 
         if (rewardText != null)
         {
-            rewardText.text = selectedReward.rewardAmount > 0
-                ? selectedReward.rewardName + "+" + selectedReward.rewardAmount
+            rewardText.text = isCoinReward
+                ? selectedReward.rewardName + " +" +
+                  selectedReward.rewardAmount
                 : selectedReward.rewardName;
         }
 
@@ -338,11 +413,10 @@ public class SpinWheelManager : MonoBehaviour
             spinButton.interactable = true;
 
         Debug.Log(
-            "Spin result: " + selectedReward.rewardName +
-            ", Coins: " + selectedReward.rewardAmount
+            "Spin Result: " + selectedReward.rewardName +
+            " | Coins: " + totalCoins
         );
     }
-
 
     private void UpdateDailySpinUI()
     {
