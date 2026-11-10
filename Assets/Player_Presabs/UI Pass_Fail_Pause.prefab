@@ -1086,7 +1086,7 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
+      - m_Target: {fileID: 4792067459032516384}
         m_TargetAssemblyTypeName: CannonManager, Assembly-CSharp
         m_MethodName: LevelFailHome
         m_Mode: 1
@@ -1649,7 +1649,7 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
+      - m_Target: {fileID: 4792067459032516384}
         m_TargetAssemblyTypeName: CannonManager, Assembly-CSharp
         m_MethodName: LevelPassHome
         m_Mode: 1
@@ -2148,7 +2148,7 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
+      - m_Target: {fileID: 4792067459032516384}
         m_TargetAssemblyTypeName: CannonManager, Assembly-CSharp
         m_MethodName: PauseHome
         m_Mode: 1
@@ -2590,9 +2590,9 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
+      - m_Target: {fileID: 4792067459032516384}
         m_TargetAssemblyTypeName: CannonManager, Assembly-CSharp
-        m_MethodName: ResumeButton
+        m_MethodName: ResumeGame
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
