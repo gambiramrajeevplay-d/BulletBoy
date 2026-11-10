@@ -3,7 +3,14 @@
 public class BulletBoyCamera : MonoBehaviour
 {
     [Header("Target")]
+    [Tooltip("Optional. Leave empty if the player is spawned at runtime. The camera finds the spawned BulletBoyPlayer and assigns itself as the target.")]
     [SerializeField] private Transform target;
+
+    [Tooltip("How often (seconds) the camera searches for the player while it has none.")]
+    [SerializeField] private float findPlayerInterval = 0.1f;
+
+    [Tooltip("Place the camera at its normal position the moment the player is found, instead of flying in from its start position.")]
+    [SerializeField] private bool snapToPlayerWhenFound = true;
 
     [Header("Normal Camera Position")]
     [SerializeField] private float distance = 12f;
@@ -67,6 +74,7 @@ public class BulletBoyCamera : MonoBehaviour
     private Camera cam;
 
     private bool finalLaunchStarted;
+    private float nextFindTime;
 
 
     // =========================================================
@@ -77,12 +85,6 @@ public class BulletBoyCamera : MonoBehaviour
     {
         cam = GetComponent<Camera>();
 
-        if (target != null)
-        {
-            player =
-                target.GetComponent<BulletBoyPlayer>();
-        }
-
         cannonManager =
             FindObjectOfType<CannonManager>();
 
@@ -90,6 +92,62 @@ public class BulletBoyCamera : MonoBehaviour
         {
             normalFOV = cam.fieldOfView;
         }
+
+        // Use the Inspector target if one was assigned.
+        // Otherwise try to find the spawned player right away.
+        if (target != null)
+        {
+            player =
+                target.GetComponent<BulletBoyPlayer>();
+        }
+        else
+        {
+            TryFindPlayer(false);
+        }
+    }
+
+
+    // =========================================================
+    // FIND / ASSIGN SPAWNED PLAYER
+    // =========================================================
+
+    /*
+     * Searches the scene for the spawned BulletBoyPlayer and assigns it
+     * as the camera target. Returns true when a target is available.
+     */
+    private bool TryFindPlayer(bool allowSnap)
+    {
+        BulletBoyPlayer found =
+            FindObjectOfType<BulletBoyPlayer>();
+
+        if (found == null)
+            return false;
+
+        AssignTarget(found.transform, allowSnap);
+
+        return true;
+    }
+
+    private void AssignTarget(Transform newTarget, bool allowSnap)
+    {
+        if (newTarget == null)
+            return;
+
+        target = newTarget;
+
+        player =
+            target.GetComponent<BulletBoyPlayer>();
+
+        finalLaunchStarted = false;
+
+        if (allowSnap && snapToPlayerWhenFound)
+        {
+            transform.position = GetNormalDesiredPosition();
+        }
+
+        Debug.Log(
+            "BulletBoyCamera: Target assigned -> " + target.name
+        );
     }
 
 
@@ -99,12 +157,28 @@ public class BulletBoyCamera : MonoBehaviour
 
     private void LateUpdate()
     {
+        // -----------------------------------------------------
+        // WAIT FOR SPAWNED PLAYER
+        // -----------------------------------------------------
+
+        // Covers: player not spawned yet, or the player was
+        // destroyed and a new one was spawned (respawn).
         if (target == null)
-            return;
+        {
+            if (Time.unscaledTime < nextFindTime)
+                return;
+
+            nextFindTime =
+                Time.unscaledTime +
+                Mathf.Max(0.02f, findPlayerInterval);
+
+            if (!TryFindPlayer(true))
+                return;
+        }
 
 
         // -----------------------------------------------------
-        // FIND PLAYER
+        // FIND PLAYER COMPONENT
         // -----------------------------------------------------
 
         if (player == null)
@@ -141,7 +215,7 @@ public class BulletBoyCamera : MonoBehaviour
 
 
         // -----------------------------------------------------
-        // NORMAL CAMERA
+        // NORMAL / FINAL CAMERA
         // -----------------------------------------------------
 
         if (!finalLaunchStarted)
@@ -166,13 +240,19 @@ public class BulletBoyCamera : MonoBehaviour
     // NORMAL CAMERA
     // =========================================================
 
-    private void UpdateNormalCamera()
+    private Vector3 GetNormalDesiredPosition()
     {
-        Vector3 desiredPosition =
+        return
             target.position
             + Vector3.right * sideOffset
             + Vector3.up * height
             - Vector3.forward * distance;
+    }
+
+    private void UpdateNormalCamera()
+    {
+        Vector3 desiredPosition =
+            GetNormalDesiredPosition();
 
 
         float smooth =
@@ -353,16 +433,18 @@ public class BulletBoyCamera : MonoBehaviour
     // SET TARGET
     // =========================================================
 
+    // Optional: call this from your spawner right after Instantiate().
+    // Example: Camera.main.GetComponent<BulletBoyCamera>().SetTarget(spawned.transform);
     public void SetTarget(Transform newTarget)
     {
-        target =
-            newTarget;
-
-        if (target != null)
+        if (newTarget == null)
         {
-            player =
-                target.GetComponent<BulletBoyPlayer>();
+            target = null;
+            player = null;
+            return;
         }
+
+        AssignTarget(newTarget, true);
     }
 
 

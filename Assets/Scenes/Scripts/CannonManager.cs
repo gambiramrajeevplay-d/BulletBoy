@@ -15,6 +15,10 @@ public class CannonManager : MonoBehaviour
     [Header("Player")]
     [SerializeField] private BulletBoyPlayer player;
 
+    [Header("Player Spawning")]
+    [Tooltip("If the player is spawned at runtime, CannonManager waits this many seconds for it to appear.")]
+    [SerializeField] private float playerWaitTimeout = 10f;
+
     [Header("Cannons")]
     [SerializeField] private BulletCannon[] cannons;
 
@@ -88,6 +92,9 @@ public class CannonManager : MonoBehaviour
     private bool isPaused;
     private float bufferedInputTimer;
 
+    // True once the player exists and the first cannon has been entered.
+    private bool levelStarted;
+
 
     // =========================================================
     // AWAKE / START
@@ -99,6 +106,8 @@ public class CannonManager : MonoBehaviour
         ApplyPlatformUI();
         UpdatePauseSoundUI();
 
+        // The player may be spawned at runtime, so this can legitimately
+        // find nothing here. Start() waits for the player if needed.
         FindPlayer();
         FindCannons();
 
@@ -140,23 +149,77 @@ public class CannonManager : MonoBehaviour
 
     private void Start()
     {
-        if (player == null)
-        {
-            Debug.LogError("CannonManager: Player not found.");
-            return;
-        }
-
         if (cannons == null || cannons.Length == 0)
         {
             Debug.LogError("CannonManager: No cannons found.");
             return;
         }
 
-        currentCannonIndex = 0;
-
         PrintCannonOrder();
 
+        // Player already exists (placed in the scene or registered before Start).
+        if (player != null)
+        {
+            BeginLevel();
+            return;
+        }
+
+        // Player is spawned at runtime: wait for it to appear.
+        StartCoroutine(WaitForPlayerAndBegin());
+    }
+
+    private IEnumerator WaitForPlayerAndBegin()
+    {
+        float waited = 0f;
+
+        while (player == null && waited < playerWaitTimeout)
+        {
+            FindPlayer();
+
+            if (player != null)
+                break;
+
+            waited += Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        if (player == null)
+        {
+            Debug.LogError(
+                "CannonManager: Player was not found after waiting " +
+                playerWaitTimeout + " seconds."
+            );
+            yield break;
+        }
+
+        BeginLevel();
+    }
+
+    private void BeginLevel()
+    {
+        if (levelStarted)
+            return;
+
+        levelStarted = true;
+        currentCannonIndex = 0;
+
         EnterCurrentCannon();
+    }
+
+    // Optional: call this from your spawner right after Instantiate().
+    // Example: FindObjectOfType<CannonManager>().RegisterPlayer(spawnedPlayer);
+    public void RegisterPlayer(BulletBoyPlayer spawnedPlayer)
+    {
+        if (spawnedPlayer == null)
+            return;
+
+        player = spawnedPlayer;
+
+        // If Start() already ran and is waiting, the wait loop will pick the
+        // player up on its next frame. If the level has not started and no
+        // wait is running, begin right away.
+        if (!levelStarted && cannons != null && cannons.Length > 0)
+            BeginLevel();
     }
 
     private void FindPlayer()
@@ -263,7 +326,7 @@ public class CannonManager : MonoBehaviour
 
     private void Update()
     {
-        if (levelFinished || isPaused || player == null)
+        if (levelFinished || isPaused || player == null || !levelStarted)
             return;
 
         bool pressed = ReadPressed();
@@ -402,6 +465,12 @@ public class CannonManager : MonoBehaviour
         if (cannon == null)
         {
             Debug.LogError("CannonManager: Cannot enter NULL cannon.");
+            return;
+        }
+
+        if (player == null)
+        {
+            Debug.LogError("CannonManager: Cannot enter cannon, player is NULL.");
             return;
         }
 

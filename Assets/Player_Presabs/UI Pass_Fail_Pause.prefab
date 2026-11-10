@@ -91,6 +91,7 @@ GameObject:
   - component: {fileID: 4792067457360821167}
   - component: {fileID: 4792067457360821169}
   - component: {fileID: 4792067457360821166}
+  - component: {fileID: 8114909739849468882}
   m_Layer: 5
   m_Name: Level Fail
   m_TagString: Untagged
@@ -157,6 +158,23 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
+--- !u!114 &8114909739849468882
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4792067457360821164}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c7f579510d96ec944b187b8dbb66cd39, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  scaleAmount: 1.1
+  defaultButton: {fileID: 4792067457900671300}
+  singleplaybtn: {fileID: 0}
+  levels: []
+  levelSelection: 0
 --- !u!1 &4792067457467974051
 GameObject:
   m_ObjectHideFlags: 0
@@ -249,7 +267,7 @@ GameObject:
   - component: {fileID: 4792067457518439012}
   m_Layer: 5
   m_Name: Home
-  m_TagString: Untagged
+  m_TagString: Giveborder
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -382,7 +400,7 @@ GameObject:
   - component: {fileID: 4792067457563999258}
   m_Layer: 5
   m_Name: high
-  m_TagString: Untagged
+  m_TagString: border
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -458,7 +476,7 @@ GameObject:
   - component: {fileID: 4792067457592054253}
   m_Layer: 5
   m_Name: high
-  m_TagString: Untagged
+  m_TagString: border
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -532,6 +550,7 @@ GameObject:
   - component: {fileID: 4792067457661073628}
   - component: {fileID: 4792067457661073630}
   - component: {fileID: 4792067457661073631}
+  - component: {fileID: 256657742663441753}
   m_Layer: 5
   m_Name: Level Pass
   m_TagString: Untagged
@@ -598,6 +617,23 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
+--- !u!114 &256657742663441753
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4792067457661073629}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c7f579510d96ec944b187b8dbb66cd39, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  scaleAmount: 1.1
+  defaultButton: {fileID: 4792067458121146171}
+  singleplaybtn: {fileID: 0}
+  levels: []
+  levelSelection: 0
 --- !u!1 &4792067457682445703
 GameObject:
   m_ObjectHideFlags: 0
@@ -901,7 +937,7 @@ GameObject:
   - component: {fileID: 4792067457895558631}
   m_Layer: 5
   m_Name: high
-  m_TagString: Untagged
+  m_TagString: border
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -978,7 +1014,7 @@ GameObject:
   - component: {fileID: 4792067457900671302}
   m_Layer: 5
   m_Name: Home
-  m_TagString: Untagged
+  m_TagString: Giveborder
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -1111,7 +1147,7 @@ GameObject:
   - component: {fileID: 4792067457909423209}
   m_Layer: 5
   m_Name: high
-  m_TagString: Untagged
+  m_TagString: border
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -1188,7 +1224,7 @@ GameObject:
   - component: {fileID: 4792067457909871490}
   m_Layer: 5
   m_Name: Sound
-  m_TagString: Untagged
+  m_TagString: Giveborder
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -1295,7 +1331,19 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 4792067457909871488}
   m_OnClick:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 4792067459032516384}
+        m_TargetAssemblyTypeName: CannonManager, Assembly-CSharp
+        m_MethodName: PauseSoundToggle
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
 --- !u!1 &4792067458013846265
 GameObject:
   m_ObjectHideFlags: 0
@@ -1309,7 +1357,7 @@ GameObject:
   - component: {fileID: 4792067458013846267}
   m_Layer: 5
   m_Name: high
-  m_TagString: Untagged
+  m_TagString: border
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -1541,7 +1589,7 @@ GameObject:
   - component: {fileID: 4792067458121146173}
   m_Layer: 5
   m_Name: Home
-  m_TagString: Untagged
+  m_TagString: Giveborder
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -1752,7 +1800,7 @@ GameObject:
   - component: {fileID: 4792067458447216471}
   m_Layer: 5
   m_Name: high
-  m_TagString: Untagged
+  m_TagString: border
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -2040,7 +2088,7 @@ GameObject:
   - component: {fileID: 4792067458504014272}
   m_Layer: 5
   m_Name: Home
-  m_TagString: Untagged
+  m_TagString: Giveborder
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -2328,7 +2376,7 @@ GameObject:
   - component: {fileID: 4792067458788944641}
   m_Layer: 5
   m_Name: close
-  m_TagString: Untagged
+  m_TagString: Giveborder
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -2482,7 +2530,7 @@ GameObject:
   - component: {fileID: 4792067458934984510}
   m_Layer: 5
   m_Name: Resume
-  m_TagString: Untagged
+  m_TagString: Giveborder
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -2748,6 +2796,7 @@ GameObject:
   - component: {fileID: 4792067459019188758}
   - component: {fileID: 4792067459019188760}
   - component: {fileID: 4792067459019188761}
+  - component: {fileID: 1279571530488955123}
   m_Layer: 5
   m_Name: Pause
   m_TagString: Untagged
@@ -2814,6 +2863,23 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
+--- !u!114 &1279571530488955123
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4792067459019188759}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c7f579510d96ec944b187b8dbb66cd39, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  scaleAmount: 1.1
+  defaultButton: {fileID: 4792067458934984506}
+  singleplaybtn: {fileID: 0}
+  levels: []
+  levelSelection: 0
 --- !u!1 &4792067459032514781
 GameObject:
   m_ObjectHideFlags: 0
@@ -2933,6 +2999,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   player: {fileID: 0}
+  playerWaitTimeout: 10
   cannons: []
   useHierarchyOrder: 1
   targetFrameRate: 60
@@ -2965,6 +3032,7 @@ GameObject:
   - component: {fileID: 4792067459110021067}
   - component: {fileID: 4792067459110021069}
   - component: {fileID: 4792067459110021066}
+  - component: {fileID: 1506168540945710683}
   m_Layer: 5
   m_Name: TutorialComplete
   m_TagString: Untagged
@@ -3031,6 +3099,23 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
+--- !u!114 &1506168540945710683
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4792067459110021064}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c7f579510d96ec944b187b8dbb66cd39, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  scaleAmount: 1.1
+  defaultButton: {fileID: 4792067457518439010}
+  singleplaybtn: {fileID: 0}
+  levels: []
+  levelSelection: 0
 --- !u!1 &4792067459186367973
 GameObject:
   m_ObjectHideFlags: 0
@@ -3044,7 +3129,7 @@ GameObject:
   - component: {fileID: 4792067459186367975}
   m_Layer: 5
   m_Name: high
-  m_TagString: Untagged
+  m_TagString: border
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0

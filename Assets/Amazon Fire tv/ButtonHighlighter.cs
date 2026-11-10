@@ -1,8 +1,6 @@
-﻿
-using Script;
+﻿using Script;
 using System.Collections;
 using System.Collections.Generic;
-using UnityEditor;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
@@ -19,37 +17,47 @@ public class ButtonHighlighter : MonoBehaviour
     [SerializeField] Button[] levels;
     [SerializeField] bool levelSelection;
 
+    private const string HighlighterKey = "currentHighlighter";
+
     private void Awake()
     {
-        if (!AndroidTV.IsAndroidOrFireTv())
+        if (!PlayerPrefs.HasKey(HighlighterKey))
         {
-            //this.gameObject.GetComponent<ButtonHighlighter>().enabled = false;
-        }
-
-        if (!PlayerPrefs.HasKey("currentHighlighter"))
-        {
-            PlayerPrefs.SetInt("currentHighlighter", 0);
+            PlayerPrefs.SetInt(HighlighterKey, 0);
         }
     }
+
     void Start()
     {
-        if (defaultButton != null)
-        {
-            EventSystem.current.SetSelectedGameObject(defaultButton);
-        }
-
         if (levelSelection)
         {
-            EventSystem.current.SetSelectedGameObject(levels[PlayerPrefs.GetInt("currentHighlighter")].gameObject);
+            DefaultHighlighter_Levels();
+            return;
         }
-    }
-    private void OnEnable()
-    {
+
         if (defaultButton != null && EventSystem.current != null)
         {
             EventSystem.current.SetSelectedGameObject(defaultButton);
         }
     }
+
+    private void OnEnable()
+    {
+        if (EventSystem.current == null)
+            return;
+
+        if (levelSelection)
+        {
+            DefaultHighlighter_Levels();
+            return;
+        }
+
+        if (defaultButton != null)
+        {
+            EventSystem.current.SetSelectedGameObject(defaultButton);
+        }
+    }
+
     void Update()
     {
         if (EventSystem.current == null)
@@ -82,6 +90,9 @@ public class ButtonHighlighter : MonoBehaviour
             }
 
             previousButton = selectedAsButton;
+
+            if (levelSelection && selectedAsButton != null)
+                SaveSelectedLevelIndex(selectedAsButton);
         }
 
         if (selectedAsButton == null)
@@ -89,9 +100,22 @@ public class ButtonHighlighter : MonoBehaviour
 
         if (levelSelection && MainUI.Instance != null)
         {
-            MainUI.Instance.UpdateSelectedLevel(
-                selectedAsButton.gameObject
-            );
+            MainUI.Instance.UpdateSelectedLevel(selectedAsButton.gameObject);
+        }
+    }
+
+    private void SaveSelectedLevelIndex(Button selected)
+    {
+        if (levels == null)
+            return;
+
+        for (int i = 0; i < levels.Length; i++)
+        {
+            if (levels[i] == selected)
+            {
+                PlayerPrefs.SetInt(HighlighterKey, i);
+                return;
+            }
         }
     }
 
@@ -107,40 +131,49 @@ public class ButtonHighlighter : MonoBehaviour
         }
         return null;
     }
+
     void HighlightButton(Button butt)
     {
         butt.transform.localScale = new Vector3(scaleAmount, scaleAmount, scaleAmount);
         if (butt.transform.tag == "Giveborder")
         {
-            FindGameObjectInChildWithTag(butt.gameObject, "border").SetActive(true);
+            var border = FindGameObjectInChildWithTag(butt.gameObject, "border");
+            if (border != null)
+                border.SetActive(true);
         }
         if (butt.GetComponent<Outline>() != null)
         {
             butt.GetComponent<Outline>().enabled = true;
         }
     }
+
     void UnHighlightButton(Button butt)
     {
+        if (butt == null)
+            return;
+
         butt.transform.localScale = new Vector3(1, 1, 1);
         if (butt.transform.tag == "Giveborder")
         {
-            FindGameObjectInChildWithTag(butt.gameObject, "border").SetActive(false);
+            var border = FindGameObjectInChildWithTag(butt.gameObject, "border");
+            if (border != null)
+                border.SetActive(false);
         }
         if (butt.GetComponent<Outline>() != null)
         {
             butt.GetComponent<Outline>().enabled = false;
         }
     }
+
     public void setHighlighter(GameObject defaultButton)
     {
         EventSystem.current.SetSelectedGameObject(defaultButton);
     }
+
     public void SetDefaultButton(GameObject _defaultButton)
     {
         defaultButton = _defaultButton;
     }
-
-
 
     //default highlight for levels selection
 
@@ -152,12 +185,12 @@ public class ButtonHighlighter : MonoBehaviour
         if (EventSystem.current == null)
             return;
 
-        int index = PlayerPrefs.GetInt("currentHighlighter", 0);
+        int index = PlayerPrefs.GetInt(HighlighterKey, 0);
         index = Mathf.Clamp(index, 0, levels.Length - 1);
 
         if (levels[index] == null || !levels[index].interactable)
         {
-            index = 0;
+            index = -1;
 
             for (int i = 0; i < levels.Length; i++)
             {
@@ -167,10 +200,12 @@ public class ButtonHighlighter : MonoBehaviour
                     break;
                 }
             }
+
+            if (index < 0)
+                return;
         }
 
         EventSystem.current.SetSelectedGameObject(null);
         EventSystem.current.SetSelectedGameObject(levels[index].gameObject);
     }
-
 }

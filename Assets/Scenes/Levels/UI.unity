@@ -18052,8 +18052,8 @@ RectTransform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 1443694660}
   - {fileID: 1498993048}
+  - {fileID: 1443694660}
   - {fileID: 822864648}
   m_Father: {fileID: 991127718}
   m_RootOrder: 0
@@ -25534,7 +25534,7 @@ RectTransform:
   m_Children:
   - {fileID: 1441878221}
   m_Father: {fileID: 1045536247}
-  m_RootOrder: 0
+  m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.9374792, y: 0.90800005}
   m_AnchorMax: {x: 0.9374792, y: 0.90800005}
@@ -25623,18 +25623,6 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1880543081}
-        m_TargetAssemblyTypeName: UnityEngine.AudioSource, UnityEngine
-        m_MethodName: PlayOneShot
-        m_Mode: 2
-        m_Arguments:
-          m_ObjectArgument: {fileID: 8300000, guid: 4b5a2e6d6b49c9147b5ce6bccceb7dbb, type: 3}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.AudioClip, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
       - m_Target: {fileID: 727967257}
         m_TargetAssemblyTypeName: WebVideoAd, Assembly-CSharp
         m_MethodName: CloseAd
@@ -25642,6 +25630,18 @@ MonoBehaviour:
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
           m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
+      - m_Target: {fileID: 1880543081}
+        m_TargetAssemblyTypeName: UnityEngine.AudioSource, UnityEngine
+        m_MethodName: PlayOneShot
+        m_Mode: 2
+        m_Arguments:
+          m_ObjectArgument: {fileID: 8300000, guid: 4b5a2e6d6b49c9147b5ce6bccceb7dbb, type: 3}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.AudioClip, UnityEngine
           m_IntArgument: 0
           m_FloatArgument: 0
           m_StringArgument: 
@@ -26887,7 +26887,7 @@ RectTransform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1045536247}
-  m_RootOrder: 1
+  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
@@ -29962,7 +29962,10 @@ MonoBehaviour:
   presentCar: 0
   webVideoAdObject: {fileID: 727967257}
   NoAds: 0
-  totalCoinsTexts: []
+  totalCoinsTexts:
+  - {fileID: 2089237317}
+  - {fileID: 1057464205}
+  - {fileID: 109401268}
   selectedlvl: 0
   lvlButtons:
   - {fileID: 922248684}
@@ -30127,7 +30130,7 @@ MonoBehaviour:
     playable: {fileID: 1859819523}
     completed: {fileID: 1340142633}
   content: {fileID: 32226741}
-  selectedIndex: -3854
+  selectedIndex: 0
   smoothSpeed: 2.5
   SelectedObj: {fileID: 0}
   positions:
@@ -30151,6 +30154,8 @@ MonoBehaviour:
   - 0
   - 0
   - 0
+  positionsAreInspectorTopValues: 1
+  allowSelectLockedLevels: 0
   unlockAllLevelsPanel: {fileID: 1203757319}
   loadInteractableLevelOnAgree: 1
   interactableLevelIndex: 1

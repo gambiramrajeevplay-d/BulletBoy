@@ -81,8 +81,19 @@ public class MainUI : MonoBehaviour
     public int selectedIndex = 0;
     public float smoothSpeed = 2.5f;
     public GameObject SelectedObj;
+
+    [Tooltip("Content anchoredPosition.y for each level button. Must match lvlButtonsUI length/order.")]
     public float[] positions;
 
+    [Tooltip("Tick this if positions were copied from the 'Top' field of Content's Rect Transform (they are the negative of anchoredPosition.y).")]
+    [SerializeField] private bool positionsAreInspectorTopValues = true;
+
+    private ScrollRect contentScrollRect;
+
+    [Tooltip("Locked levels stay navigable (so the content scrolls to them) but cannot be played.")]
+    [SerializeField] private bool allowSelectLockedLevels = true;
+
+    private const string HighlighterKey = "currentHighlighter";
 
     [Header("Level Unlock")]
     [SerializeField] private GameObject unlockAllLevelsPanel;
@@ -171,8 +182,10 @@ public class MainUI : MonoBehaviour
             return;
         }
     }
+
     private float contentStartY;
-private bool contentPositionInitialized = false;
+    private bool contentPositionInitialized = false;
+
     private void Start()
     {
         InitializeLobbyAd();
@@ -325,6 +338,19 @@ private bool contentPositionInitialized = false;
                 mainMenu.SetActive(true);
         }
 
+        if (content != null)
+        {
+            contentStartY = content.anchoredPosition.y;
+            contentPositionInitialized = true;
+
+            // The ScrollRect clamps/overrides the content position every frame.
+            // This script drives the scrolling, so turn it off.
+            contentScrollRect = content.GetComponentInParent<ScrollRect>();
+            if (contentScrollRect != null)
+                contentScrollRect.enabled = false;
+        }
+
+
     }
 
     private void Update()
@@ -332,14 +358,22 @@ private bool contentPositionInitialized = false;
         if (vipFlowActive)
             return;
 
-        if (Input.GetKeyDown(KeyCode.LeftArrow))
-            SelectPrevious();
-
-        if (Input.GetKeyDown(KeyCode.RightArrow))
-            SelectNext();
+        // Arrow-key handling was removed: the EventSystem handles navigation
+        // and LevelSelectReporter / UpdateSelectedLevel keep selectedIndex in sync.
 
         if (carControllerPanel != null && carControllerPanel.activeInHierarchy)
             UpdateCoinsUI();
+    }
+
+    private void LateUpdate()
+    {
+        if (vipFlowActive)
+            return;
+
+        // Scroll the level content toward the selected level every frame
+        // while the level selection panel is open.
+        if (levelSelection != null && levelSelection.activeInHierarchy)
+            Content_move();
     }
 
     //========================= Ads Positions =========================
@@ -551,6 +585,10 @@ private bool contentPositionInitialized = false;
 
         UpdateTotalCoins();
         UpdateLevelButtonsUI();
+
+        // Restore the last selected level and put the content there immediately,
+        // so it does not start at index 0 and slowly crawl.
+        RestoreSelectedIndexAndSnap();
 
         StartCoroutine(SelectFirstLevelButton());
     }
@@ -838,6 +876,12 @@ private bool contentPositionInitialized = false;
             if (lvl == null || lvl.button == null)
                 continue;
 
+            // Make sure every level button reports its index when selected.
+            LevelSelectReporter reporter = lvl.button.GetComponent<LevelSelectReporter>();
+            if (reporter == null)
+                reporter = lvl.button.gameObject.AddComponent<LevelSelectReporter>();
+            reporter.index = i;
+
             // Remove old listeners so refreshing the menu never adds duplicates.
             lvl.button.onClick.RemoveAllListeners();
 
@@ -897,7 +941,9 @@ private bool contentPositionInitialized = false;
 
     private void ConfigureLevelButton(LevelButtonUI lvl, bool interactable, bool showLock)
     {
-        lvl.button.interactable = interactable;
+        // Locked levels stay selectable so navigation can reach them.
+        // They have no load listener, so pressing them does nothing.
+        lvl.button.interactable = interactable || allowSelectLockedLevels;
 
         if (lvl.lockImg != null)
             lvl.lockImg.SetActive(showLock);
@@ -1094,16 +1140,30 @@ private bool contentPositionInitialized = false;
 
     // ======================== LEVEL CONTENT MOVEMENT ========================
 
+    // Called by LevelSelectReporter when a level button is selected.
+    public void SetSelectedIndex(int i)
+    {
+        if (lvlButtonsUI == null || i < 0 || i >= lvlButtonsUI.Length)
+            return;
 
+        selectedIndex = i;
+
+        if (lvlButtonsUI[i] != null && lvlButtonsUI[i].button != null)
+            SelectedObj = lvlButtonsUI[i].button.gameObject;
+
+        PlayerPrefs.SetInt(HighlighterKey, i);
+    }
+
+    // Called every frame by ButtonHighlighter for the currently selected level button.
+    // Only updates the selected index/object. Scrolling is done in LateUpdate.
     public void UpdateSelectedLevel(GameObject selectedObject)
     {
         if (selectedObject == null)
             return;
 
-        if (lvlButtonsUI == null || positions == null)
+        if (lvlButtonsUI == null)
             return;
 
-        // Find which array element matches the selected GameObject.
         for (int i = 0; i < lvlButtonsUI.Length; i++)
         {
             if (lvlButtonsUI[i] == null ||
@@ -1112,23 +1172,44 @@ private bool contentPositionInitialized = false;
 
             if (lvlButtonsUI[i].button.gameObject == selectedObject)
             {
-                // Selected index is the button's array index.
                 selectedIndex = i;
-
-                // Store the selected object.
                 SelectedObj = selectedObject;
-
-                // Move content to the matching position.
-                Content_move();
-
-                Debug.Log(
-                    "Selected Index: " + selectedIndex +
-                    " | Target Y: " + positions[selectedIndex]
-                );
-
                 return;
             }
         }
+    }
+
+    // Reads the saved level index, applies it, and jumps the content there instantly.
+    private void RestoreSelectedIndexAndSnap()
+    {
+        if (positions == null || positions.Length == 0)
+            return;
+
+        int saved = PlayerPrefs.GetInt(HighlighterKey, 0);
+        selectedIndex = Mathf.Clamp(saved, 0, positions.Length - 1);
+
+        SnapContentToSelected();
+    }
+
+    private float GetTargetY(int index)
+    {
+        float value = positions[index];
+        return positionsAreInspectorTopValues ? -value : value;
+    }
+
+    public void SnapContentToSelected()
+    {
+        if (content == null ||
+            positions == null ||
+            positions.Length == 0)
+            return;
+
+        if (selectedIndex < 0 || selectedIndex >= positions.Length)
+            return;
+
+        Vector2 pos = content.anchoredPosition;
+        pos.y = GetTargetY(selectedIndex);
+        content.anchoredPosition = pos;
     }
 
     public void Content_move()
@@ -1142,31 +1223,24 @@ private bool contentPositionInitialized = false;
             selectedIndex >= positions.Length)
             return;
 
-        float targetY = positions[selectedIndex];
+        float targetY = GetTargetY(selectedIndex);
 
         Vector2 currentPosition = content.anchoredPosition;
 
-        currentPosition.y = Mathf.Lerp(
-            currentPosition.y,
-            targetY,
-            smoothSpeed * Time.unscaledDeltaTime
-        );
+        if (Mathf.Abs(currentPosition.y - targetY) < 0.5f)
+        {
+            currentPosition.y = targetY;
+        }
+        else
+        {
+            currentPosition.y = Mathf.Lerp(
+                currentPosition.y,
+                targetY,
+                smoothSpeed * Time.unscaledDeltaTime
+            );
+        }
 
         content.anchoredPosition = currentPosition;
-    }
-
-
-
-    public void SelectNext()
-    {
-        if (positions != null && selectedIndex < positions.Length - 1)
-            selectedIndex++;
-    }
-
-    public void SelectPrevious()
-    {
-        if (selectedIndex > 0)
-            selectedIndex--;
     }
 
     public void Loading()
@@ -1476,15 +1550,6 @@ private bool contentPositionInitialized = false;
 
         StartCoroutine(ShowTitleAndDailyRewards());
     }
-
-
-    // Optional: Call this only if you intentionally want to show
-    // the envelope again for testing.
-    //public void ResetVipEnvelopeForTesting()
-    //{
-    //    PlayerPrefs.DeleteKey(VipEnvelopeShownKey);
-    //    PlayerPrefs.Save();
-    //}
 
 
     // ========================= CAR CONTROLLER =========================
