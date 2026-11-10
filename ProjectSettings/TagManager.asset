@@ -10,6 +10,8 @@ TagManager:
   - Points
   - Coin
   - CoinText
+  - Giveborder
+  - border
   layers:
   - Default
   - TransparentFX

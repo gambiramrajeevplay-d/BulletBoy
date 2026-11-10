@@ -83,7 +83,7 @@ public class MainUI : MonoBehaviour
     public GameObject SelectedObj;
     public float[] positions;
 
-   
+
     [Header("Level Unlock")]
     [SerializeField] private GameObject unlockAllLevelsPanel;
 
@@ -987,15 +987,16 @@ public class MainUI : MonoBehaviour
         SelectedObj = level.button.gameObject;
         selectedIndex = levelIndex;
 
-        StartCoroutine(LoadLevelCoroutine(level));
+        StartCoroutine(LoadLevelCoroutine(level, levelIndex));
     }
 
-    private IEnumerator LoadLevelCoroutine(LevelButtonUI level)
+    private IEnumerator LoadLevelCoroutine(LevelButtonUI level, int levelArrayIndex)
     {
         Loading();
 
         // Save the actual level number for gameplay progression systems.
         PlayerPrefs.SetInt(StringsData.levelToLoad, Mathf.Max(1, level.levelToLoad));
+        PlayerPrefs.SetInt("CurrentLevelArrayIndex", levelArrayIndex);
 
         // Retain the existing key for any systems that still read it.
         PlayerPrefs.SetInt(SelectedLevelKey, Mathf.Max(0, level.levelToLoad - 1));
@@ -1006,6 +1007,60 @@ public class MainUI : MonoBehaviour
 
         // Load the scene configured on this level's MainUI Inspector entry.
         SceneManager.LoadScene(level.sceneNameToLoad);
+    }
+
+
+    // Called by the Level Pass panel's Home button.
+    // Progress is saved only after a successful level when Home is pressed.
+    public static void LevelPassHomeAndReturnToUI()
+    {
+        Scene activeScene = SceneManager.GetActiveScene();
+        string normalizedSceneName = activeScene.name
+            .Replace("_", "")
+            .Replace(" ", "")
+            .ToLowerInvariant();
+
+        // Game_Lobby, GameLobby and gamelobby are treated as the lobby scene.
+        // Passing the lobby/tutorial must not unlock a normal game level.
+        if (normalizedSceneName != "gamelobby")
+        {
+            int completedLevel = Mathf.Max(
+                1, PlayerPrefs.GetInt(StringsData.levelToLoad, 1));
+
+            int currentlyUnlockedLevel = Mathf.Max(
+                1, PlayerPrefs.GetInt(StringsData.playerLevel, 1));
+
+            // Completing level N unlocks level N+1.
+            int nextUnlockedLevel = Mathf.Max(
+                currentlyUnlockedLevel, completedLevel + 1);
+
+            PlayerPrefs.SetInt(StringsData.playerLevel, nextUnlockedLevel);
+
+            // The level button array index is saved when the player loads a level.
+            // This is reliable even though MainUI is not present in gameplay scenes.
+            int completedArrayIndex = PlayerPrefs.GetInt(
+                "CurrentLevelArrayIndex", completedLevel - 1);
+
+            if (completedArrayIndex >= 0)
+                PlayerPrefs.SetInt("LevelCompleted_" + completedArrayIndex, 1);
+
+            PlayerPrefs.Save();
+        }
+        else
+        {
+            Debug.Log("MainUI: Game_Lobby passed. No normal level was unlocked.");
+        }
+
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(0);
+    }
+
+    // Called by the Level Fail panel's Home button.
+    // This returns to the UI without changing progression or completion flags.
+    public static void LevelFailHomeAndReturnToUI()
+    {
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(0);
     }
 
     private void ShowUnlock()
@@ -1150,33 +1205,24 @@ public class MainUI : MonoBehaviour
 
     public void Mute()
     {
-        bool isMusicOn = PlayerPrefs.GetInt("MusicState", 1) == 1;
-
-        isMusicOn = !isMusicOn;
-
-        AudioListener.volume = isMusicOn ? 1f : 0f;
-
-        PlayerPrefs.SetInt("MusicState", isMusicOn ? 1 : 0);
-        PlayerPrefs.Save();
-
-        if (soundButton != null)
-        {
-            soundButton.sprite =
-                isMusicOn ? soundOnSprite : soundOffSprite;
-        }
+        // Both the Main Menu and gameplay Pause UI use this shared setting.
+        AudioManagerPause.IsMuted = !AudioManagerPause.IsMuted;
+        UpdateSoundUI();
     }
 
     private void UpdateSoundUI()
     {
-        bool isMusicOn = PlayerPrefs.GetInt("MusicState", 1) == 1;
+        AudioManagerPause.Initialize();
 
-        AudioListener.volume = isMusicOn ? 1f : 0f;
+        bool isMusicOn = !AudioManagerPause.IsMuted;
 
         if (soundButton != null)
-        {
-            soundButton.sprite =
-                isMusicOn ? soundOnSprite : soundOffSprite;
-        }
+            soundButton.sprite = isMusicOn ? soundOnSprite : soundOffSprite;
+    }
+
+    private void HandleMuteStateChanged()
+    {
+        UpdateSoundUI();
     }
 
     // ======================== VIP FLOW ========================
@@ -1409,7 +1455,14 @@ public class MainUI : MonoBehaviour
 
     private void OnEnable()
     {
+        AudioManagerPause.OnMuteStateChanged += HandleMuteStateChanged;
+        UpdateSoundUI();
         UpdateCoinsUI();
+    }
+
+    private void OnDisable()
+    {
+        AudioManagerPause.OnMuteStateChanged -= HandleMuteStateChanged;
     }
 
     private void UpdateCoinsUI()

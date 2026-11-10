@@ -7,7 +7,7 @@ public class CoinManager : MonoBehaviour
 
     [Header("Coin Rewards")]
     public int levelPassCoins = 100;
-    public int levelFailCoins = 50;
+    public int levelFailCoins = 0;
 
     [Header("Coin UI")]
     public TMP_Text coinText;
@@ -36,6 +36,18 @@ public class CoinManager : MonoBehaviour
         RefreshCoins();
     }
 
+    private void OnEnable()
+    {
+        if (Instance == this)
+            RefreshCoins();
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+            Instance = null;
+    }
+
     public void RewardLevelPass()
     {
         if (rewardGiven)
@@ -51,13 +63,31 @@ public class CoinManager : MonoBehaviour
             return;
 
         rewardGiven = true;
-        AddCoins(levelFailCoins);
+
+        // Failed levels always award exactly 0 coins.
+        // This intentionally ignores any old Inspector value on levelFailCoins.
+        RefreshCoins();
+    }
+
+    public void RewardTutorialComplete()
+    {
+        if (rewardGiven)
+            return;
+
+        rewardGiven = true;
+
+        // Tutorial completion awards 0 coins.
+        RefreshCoins();
     }
 
     public void AddCoins(int amount)
     {
+        // Even a zero-value update refreshes the displayed saved balance.
         if (amount <= 0)
+        {
+            RefreshCoins();
             return;
+        }
 
         totalCoins = PlayerPrefs.GetInt("TotalCoins", 0);
         totalCoins += amount;
@@ -85,7 +115,7 @@ public class CoinManager : MonoBehaviour
     {
         totalCoins = PlayerPrefs.GetInt("TotalCoins", 0);
         UpdateCoinUI();
-       // UpdateMenuCoinUI();
+        // UpdateMenuCoinUI();
     }
 
     private void SaveCoins()
@@ -94,13 +124,17 @@ public class CoinManager : MonoBehaviour
         PlayerPrefs.Save();
 
         UpdateCoinUI();
-       // UpdateMenuCoinUI();
+        // UpdateMenuCoinUI();
     }
 
     public void UpdateCoinUI()
     {
         if (coinText != null)
             coinText.text = CoinFormatter.FormatCoins(totalCoins);
+
+        // If MainUI exists in this scene, refresh all of its coin labels too.
+        if (MainUI.Instance != null)
+            MainUI.Instance.UpdateTotalCoins();
     }
 
     //private void UpdateMenuCoinUI()

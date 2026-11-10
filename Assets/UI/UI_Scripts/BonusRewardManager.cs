@@ -68,7 +68,7 @@ public class BonusRewardManager : MonoBehaviour
 
     private void Awake()
     {
-        if(Instance == null)
+        if (Instance == null)
         {
             Instance = this;
         }
@@ -479,7 +479,7 @@ public class BonusRewardManager : MonoBehaviour
         // Activate only the currently selected reward's message.
         BonusReward reward = bonusRewards[index];
 
-        SetRewardState(reward, false, false, false, true);
+        SetRewardState(reward, true, false, false, true);
 
         reward.messageCoroutine =
             StartCoroutine(HideCompleteLevelMessage(index));
