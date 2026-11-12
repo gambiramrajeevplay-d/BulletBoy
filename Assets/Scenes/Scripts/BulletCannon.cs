@@ -71,9 +71,28 @@ public class BulletCannon : MonoBehaviour
     [Tooltip("One-shot audio clip played when the player launches.")]
     [SerializeField] private AudioClip launchAudioClip;
 
-    [Tooltip("Volume of the launch sound.")]
+    [Tooltip("Volume of the launch sound. 1 = normal, above 1 = boosted (louder than the clip's original level). " +
+             "If it starts to distort, lower this and turn the InGameMusic volume down instead.")]
+    [Range(0f, 5f)]
+    [SerializeField] private float launchAudioVolume = 2.5f;
+
+    [Tooltip("0 = 2D (same loudness everywhere, recommended). 1 = 3D (gets quieter with distance from the camera).")]
     [Range(0f, 1f)]
-    [SerializeField] private float launchAudioVolume = 1f;
+    [SerializeField] private float launchSpatialBlend = 0f;
+
+    [Tooltip("Optional. Route the launch sound through an AudioMixer group (e.g. an SFX group).")]
+    [SerializeField] private UnityEngine.Audio.AudioMixerGroup launchMixerGroup;
+
+
+    // =========================================================
+    // IN GAME MUSIC
+    // =========================================================
+
+    [Header("In Game Music (Final Cannon Only)")]
+
+    [Tooltip("Name of the GameObject in the scene that plays the in-game music. " +
+             "It is turned off when the FINAL cannon fires the player.")]
+    [SerializeField] private string inGameMusicName = "InGameMusic";
 
 
     // =========================================================
@@ -297,6 +316,9 @@ public class BulletCannon : MonoBehaviour
     private Vector3 previousCannonPosition;
     private Vector3 currentCannonPosition;
 
+    // Cached while the object is still active (GameObject.Find ignores inactive objects).
+    private GameObject inGameMusicObject;
+
 
     // =========================================================
     // AWAKE
@@ -330,6 +352,10 @@ public class BulletCannon : MonoBehaviour
             cannonVisual != transform;
 
         CachePositions();
+
+        // Only the final cannon needs the music object.
+        if (isFinalCannon && !string.IsNullOrEmpty(inGameMusicName))
+            inGameMusicObject = GameObject.Find(inGameMusicName);
     }
 
 
@@ -367,7 +393,11 @@ public class BulletCannon : MonoBehaviour
 
         launchAudioSource.playOnAwake = false;
         launchAudioSource.loop = false;
-        launchAudioSource.spatialBlend = 1f;
+        launchAudioSource.spatialBlend = Mathf.Clamp01(launchSpatialBlend);
+        launchAudioSource.volume = 1f;
+
+        if (launchMixerGroup != null)
+            launchAudioSource.outputAudioMixerGroup = launchMixerGroup;
     }
 
 
@@ -385,8 +415,32 @@ public class BulletCannon : MonoBehaviour
 
         launchAudioSource.PlayOneShot(
             launchAudioClip,
-            Mathf.Clamp01(launchAudioVolume)
+            Mathf.Max(0f, launchAudioVolume)
         );
+    }
+
+
+    // =========================================================
+    // STOP IN GAME MUSIC
+    // =========================================================
+
+    // Turns off the in-game music GameObject (found by name).
+    private void StopInGameMusic()
+    {
+        if (inGameMusicObject == null && !string.IsNullOrEmpty(inGameMusicName))
+            inGameMusicObject = GameObject.Find(inGameMusicName);
+
+        if (inGameMusicObject != null)
+        {
+            inGameMusicObject.SetActive(false);
+        }
+        else
+        {
+            Debug.LogWarning(
+                gameObject.name +
+                ": '" + inGameMusicName + "' GameObject was not found."
+            );
+        }
     }
 
 
@@ -677,7 +731,7 @@ public class BulletCannon : MonoBehaviour
          * 1. Stretch
          * 2. Wait
          * 3. Big squash
-         * 4. Launch player + sound
+         * 4. Launch player + sound + stop in-game music
          * 5. Return cannon to normal
          */
         if (isFinalCannon)
@@ -807,6 +861,9 @@ public class BulletCannon : MonoBehaviour
 
             // PLAY SOUND AT THE EXACT FINAL LAUNCH MOMENT
             PlayLaunchSound();
+
+            // TURN OFF THE IN-GAME MUSIC AT THE EXACT FINAL LAUNCH MOMENT
+            StopInGameMusic();
 
             // Launch player
             player.LaunchFromCannon(

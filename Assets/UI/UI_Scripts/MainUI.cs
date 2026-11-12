@@ -186,8 +186,26 @@ public class MainUI : MonoBehaviour
     private float contentStartY;
     private bool contentPositionInitialized = false;
 
+    // The ScrollRect clamps/overrides the content position every frame.
+    // This script drives the scrolling itself, so the ScrollRect must stay off.
+    // Called at the top of Start (so early-return paths can't skip it) and
+    // every frame while level selection is open.
+    private void DisableContentScrollRect()
+    {
+        if (content == null)
+            return;
+
+        if (contentScrollRect == null)
+            contentScrollRect = content.GetComponentInParent<ScrollRect>(true);
+
+        if (contentScrollRect != null && contentScrollRect.enabled)
+            contentScrollRect.enabled = false;
+    }
+
     private void Start()
     {
+       // DisableContentScrollRect();
+
         InitializeLobbyAd();
         InitializeCarController();
 
@@ -342,15 +360,7 @@ public class MainUI : MonoBehaviour
         {
             contentStartY = content.anchoredPosition.y;
             contentPositionInitialized = true;
-
-            // The ScrollRect clamps/overrides the content position every frame.
-            // This script drives the scrolling, so turn it off.
-            contentScrollRect = content.GetComponentInParent<ScrollRect>();
-            if (contentScrollRect != null)
-                contentScrollRect.enabled = false;
         }
-
-
     }
 
     private void Update()
@@ -360,7 +370,6 @@ public class MainUI : MonoBehaviour
 
         // Arrow-key handling was removed: the EventSystem handles navigation
         // and LevelSelectReporter / UpdateSelectedLevel keep selectedIndex in sync.
-
         if (carControllerPanel != null && carControllerPanel.activeInHierarchy)
             UpdateCoinsUI();
     }
@@ -372,8 +381,16 @@ public class MainUI : MonoBehaviour
 
         // Scroll the level content toward the selected level every frame
         // while the level selection panel is open.
-        if (levelSelection != null && levelSelection.activeInHierarchy)
-            Content_move();
+        if (AndroidTV.IsAndroidOrFireTv())
+        {
+
+            if (levelSelection != null && levelSelection.activeInHierarchy)
+                Content_move();
+        }
+        else
+        {
+
+        }
     }
 
     //========================= Ads Positions =========================
@@ -886,10 +903,12 @@ public class MainUI : MonoBehaviour
             lvl.button.onClick.RemoveAllListeners();
 
             bool isLevelOne = lvl.levelToLoad == 1;
-            bool isPaidLevelFiveAvailable =
-                lvl.isPaidLevel && lvl.levelToLoad == 5 && playerLevel >= 5;
 
-            bool isUnlocked = isLevelOne || playerLevel >= lvl.levelToLoad;
+            // Player has reached this level (previous level completed).
+            bool isReached = isLevelOne || playerLevel >= lvl.levelToLoad;
+
+            // Paid level the player has reached but the full game is not bought yet.
+            bool isPaidReachedNotBought = lvl.isPaidLevel && isReached && unlockedAll == 0;
 
             if (lvl.lockImg != null)
                 lvl.lockImg.SetActive(true);
@@ -900,34 +919,31 @@ public class MainUI : MonoBehaviour
             if (lvl.completed != null)
                 lvl.completed.SetActive(false);
 
-            // Level 1 is always free.
             if (isLevelOne)
             {
+                // Level 1 is always free.
                 ConfigureLevelButton(lvl, true, false);
+                AddLevelLoadListener(lvl, i);
             }
-            // Level 5 becomes selectable after level 4 progression,
-            // but still opens the unlock panel until all levels are purchased.
-            else if (isPaidLevelFiveAvailable)
+            else if (isPaidReachedNotBought)
             {
-                ConfigureLevelButton(lvl, true, unlockedAll == 0);
-
-                if (unlockedAll == 1)
-                    AddLevelLoadListener(lvl, i);
-                else
-                    AddUnlockPanelListener(lvl);
-            }
-            // Other paid levels can be selected to open the unlock panel.
-            else if (lvl.isPaidLevel && unlockedAll == 0)
-            {
-                ConfigureLevelButton(lvl, true, true);
+                // Previous level completed: show it as unlocked (no lock, playable on),
+                // but clicking opens the Buy Full Game panel.
+                ConfigureLevelButton(lvl, true, false);
                 AddUnlockPanelListener(lvl);
             }
-            // Normal progression-based levels.
+            else if (lvl.isPaidLevel && unlockedAll == 0)
+            {
+                // Paid level not reached yet: stays locked, click opens the panel.
+                ConfigureLevelButton(lvl, false, true);
+                AddUnlockPanelListener(lvl);
+            }
             else
             {
-                ConfigureLevelButton(lvl, isUnlocked, !isUnlocked);
+                // Normal progression-based levels (also paid levels after purchase).
+                ConfigureLevelButton(lvl, isReached, !isReached);
 
-                if (isUnlocked)
+                if (isReached)
                     AddLevelLoadListener(lvl, i);
             }
 
@@ -992,6 +1008,31 @@ public class MainUI : MonoBehaviour
 
         UpdateLevelButtonsUI();
         UpdateTotalCoins();
+
+        // Put the content back on the last selected level and re-select that button
+        // so the content keeps following the highlighter.
+        RestoreSelectedIndexAndSnap();
+        StartCoroutine(ReselectLevelAfterClose());
+    }
+
+    private IEnumerator ReselectLevelAfterClose()
+    {
+        // Wait a frame so the panel is fully off and BuyFullHigh has run.
+        yield return null;
+
+        if (levelSelection == null || !levelSelection.activeInHierarchy ||
+            EventSystem.current == null || lvlButtonsUI == null ||
+            lvlButtonsUI.Length == 0)
+            yield break;
+
+        int idx = Mathf.Clamp(selectedIndex, 0, lvlButtonsUI.Length - 1);
+        Button b = lvlButtonsUI[idx] != null ? lvlButtonsUI[idx].button : null;
+
+        if (b != null && b.gameObject.activeInHierarchy)
+        {
+            EventSystem.current.SetSelectedGameObject(null);
+            EventSystem.current.SetSelectedGameObject(b.gameObject);
+        }
     }
 
 
@@ -1154,7 +1195,7 @@ public class MainUI : MonoBehaviour
         PlayerPrefs.SetInt(HighlighterKey, i);
     }
 
-    // Called every frame by ButtonHighlighter for the currently selected level button.
+    // Updates the selected index/object from the currently selected level button.
     // Only updates the selected index/object. Scrolling is done in LateUpdate.
     public void UpdateSelectedLevel(GameObject selectedObject)
     {
@@ -1551,6 +1592,68 @@ public class MainUI : MonoBehaviour
         StartCoroutine(ShowTitleAndDailyRewards());
     }
 
+    // ======================== FULL GAME IAP ========================
+
+    private const string FullGameKey = "FullGame";
+
+    public bool IsFullGamePurchased()
+    {
+        return PlayerPrefs.GetInt(StringsData.unlockedAllLevels, 0) == 1 ||
+               PlayerPrefs.GetInt(FullGameKey, 0) == 1;
+    }
+
+    // Hook this to the "Buy Full Game" button on the unlock panel.
+    // It starts the store purchase. Replace the body with your IAP call.
+    public void BuyFullGame()
+    {
+        if (IsFullGamePurchased())
+        {
+            OnFullGamePurchaseSuccess();
+            return;
+        }
+
+        // TODO: call your IAP manager here, for example:
+        // IAPManager.Instance.BuyFullGame();
+        // The IAP success callback must call MainUI.Instance.OnFullGamePurchaseSuccess().
+        Debug.LogWarning("MainUI: BuyFullGame() is not connected to an IAP manager yet.");
+    }
+
+    // Call this ONLY from the IAP success / restore callback.
+    public void OnFullGamePurchaseSuccess()
+    {
+        UnlockFullGame();
+
+        // Refresh everything that depends on the unlock.
+        UpdateLevelButtonsUI();
+        UpdateCarButtons();
+        UpdateCoinsUI();
+        UpdateTotalCoins();
+
+        // Close the Buy Full Game panel and return to level selection.
+        CloseUnlockAllLevelsPanel();
+    }
+
+    public void UnlockFullGame()
+    {
+        UnlockAllCars();
+        UnlockAllLevels();
+    }
+
+    public void UnlockAllCars()
+    {
+        for (int i = 0; i < TOTAL_CARS; i++)
+            PlayerPrefs.SetInt("car" + i, 1);
+
+        PlayerPrefs.Save();
+        Debug.Log("All cars unlocked via IAP");
+    }
+
+    public void UnlockAllLevels()
+    {
+        PlayerPrefs.SetInt(FullGameKey, 1);                        // modes unlock
+        PlayerPrefs.SetInt(StringsData.unlockedAllLevels, 1);      // levels / enemy unlock
+        PlayerPrefs.Save();
+    }
 
     // ========================= CAR CONTROLLER =========================
 

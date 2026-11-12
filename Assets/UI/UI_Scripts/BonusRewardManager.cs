@@ -65,6 +65,10 @@ public class BonusRewardManager : MonoBehaviour
     private int selectedRewardIndex = -1;
     private bool rewardClaimInProgress;
     private bool openedFromHomeForBonusReward = false;
+    private bool hierarchyWarningShown;
+
+    // Delayed selection of the Tap To Claim / Done button (see SelectButton).
+    private Coroutine selectButtonCoroutine;
 
     private void Awake()
     {
@@ -118,6 +122,8 @@ public class BonusRewardManager : MonoBehaviour
 
     private void Start()
     {
+        ValidateReferences();
+
         // Start with the reward sub-cards hidden.
         HideAllStageCards();
 
@@ -133,6 +139,12 @@ public class BonusRewardManager : MonoBehaviour
     private void OnEnable()
     {
         RefreshAllRewards();
+    }
+
+    private void OnDisable()
+    {
+        // A coroutine stops when this object is disabled, so clear the handle.
+        selectButtonCoroutine = null;
     }
 
     private void OnDestroy()
@@ -169,6 +181,128 @@ public class BonusRewardManager : MonoBehaviour
                     reward.doneListener);
             }
         }
+    }
+
+    // ---------------- INSPECTOR VALIDATION ----------------
+
+    // Logs Inspector mistakes that make panels switch off or never appear.
+    private void ValidateReferences()
+    {
+        if (victoryChest == null)
+            Debug.LogWarning("BonusRewardManager: 'Victory Chest' panel is not assigned.");
+
+        if (gotReward == null)
+            Debug.LogWarning("BonusRewardManager: 'Got Reward' panel is not assigned.");
+
+        if (rewardStore == null)
+            Debug.LogWarning("BonusRewardManager: 'Reward Store' panel is not assigned.");
+
+        if (bonusRewards == null)
+            return;
+
+        for (int i = 0; i < bonusRewards.Length; i++)
+        {
+            BonusReward r = bonusRewards[i];
+
+            if (r == null)
+            {
+                Debug.LogWarning("BonusRewardManager: Element " + i + " is empty.");
+                continue;
+            }
+
+            if (r.rewardButton == null)
+                Debug.LogWarning("BonusRewardManager: Element " + i + " has no Reward Button.");
+
+            if (r.victoryChestCard == null)
+                Debug.LogWarning("BonusRewardManager: Element " + i + " has no Victory Chest Card.");
+
+            if (r.tapToClaimButton == null)
+                Debug.LogWarning("BonusRewardManager: Element " + i + " has no Tap To Claim Button.");
+
+            if (r.gotRewardCard == null)
+                Debug.LogWarning("BonusRewardManager: Element " + i + " has no Got Reward Card.");
+
+            if (r.doneButton == null)
+                Debug.LogWarning("BonusRewardManager: Element " + i + " has no Done Button.");
+
+            for (int j = i + 1; j < bonusRewards.Length; j++)
+            {
+                BonusReward o = bonusRewards[j];
+
+                if (o == null)
+                    continue;
+
+                if (r.victoryChestCard != null && r.victoryChestCard == o.victoryChestCard)
+                    Debug.LogWarning("BonusRewardManager: Elements " + i + " and " + j + " share the same Victory Chest Card.");
+
+                if (r.tapToClaimButton != null && r.tapToClaimButton == o.tapToClaimButton)
+                    Debug.LogWarning("BonusRewardManager: Elements " + i + " and " + j + " share the same Tap To Claim Button.");
+
+                if (r.gotRewardCard != null && r.gotRewardCard == o.gotRewardCard)
+                    Debug.LogWarning("BonusRewardManager: Elements " + i + " and " + j + " share the same Got Reward Card.");
+
+                if (r.doneButton != null && r.doneButton == o.doneButton)
+                    Debug.LogWarning("BonusRewardManager: Elements " + i + " and " + j + " share the same Done Button.");
+            }
+        }
+    }
+
+    // ---------------- SAFE PANEL HELPERS ----------------
+
+    // Turns an object ON together with every inactive parent, so it is
+    // really visible even if a parent was switched off earlier.
+    private void ActivateWithParents(GameObject target)
+    {
+        if (target == null)
+            return;
+
+        Transform t = target.transform;
+
+        while (t != null)
+        {
+            if (!t.gameObject.activeSelf)
+                t.gameObject.SetActive(true);
+
+            t = t.parent;
+        }
+    }
+
+    // Hides a panel, but NEVER if that would also hide the panel we are
+    // about to show (the next panel is inside it) or this script itself.
+    private void HidePanelSafely(GameObject panel, GameObject nextPanel)
+    {
+        if (panel == null || !panel.activeSelf)
+            return;
+
+        bool containsNextPanel =
+            nextPanel != null &&
+            nextPanel.transform.IsChildOf(panel.transform);
+
+        bool containsThisManager =
+            transform.IsChildOf(panel.transform);
+
+        if (containsNextPanel || containsThisManager)
+        {
+            // Keep it on and draw the next panel on top of it.
+            if (nextPanel != null)
+                nextPanel.transform.SetAsLastSibling();
+
+            if (!hierarchyWarningShown)
+            {
+                hierarchyWarningShown = true;
+
+                Debug.LogWarning(
+                    "BonusRewardManager: '" + panel.name +
+                    "' contains '" + (nextPanel != null ? nextPanel.name : "the next panel") +
+                    "' (or this script), so it was left active. " +
+                    "For a clean result make Reward Store, Victory Chest and " +
+                    "Got Reward SIBLINGS under Parent Reward Store.");
+            }
+
+            return;
+        }
+
+        panel.SetActive(false);
     }
 
     // ---------------- REWARD STORE ----------------
@@ -246,19 +380,18 @@ public class BonusRewardManager : MonoBehaviour
         selectedRewardIndex = index;
         rewardClaimInProgress = true;
 
-        // Close Reward Store and Got Reward.
-        if (rewardStore != null)
-            rewardStore.SetActive(false);
-
-        if (gotReward != null)
-            gotReward.SetActive(false);
-
-        // Open Victory Chest with only the selected reward.
+        // 1) Hide every card / button first.
         HideAllStageCards();
 
-        if (victoryChest != null)
-            victoryChest.SetActive(true);
+        // 2) Show the Victory Chest BEFORE hiding the store, so it can
+        //    never be switched off by hiding a parent panel.
+        ActivateWithParents(victoryChest);
 
+        // 3) Hide the Reward Store and Got Reward panels.
+        HidePanelSafely(rewardStore, victoryChest);
+        HidePanelSafely(gotReward, victoryChest);
+
+        // 4) Show only the selected reward's Victory Chest card.
         ShowVictoryChestCard(index);
     }
 
@@ -266,23 +399,26 @@ public class BonusRewardManager : MonoBehaviour
 
     private void ShowVictoryChestCard(int selectedIndex)
     {
-        for (int i = 0; i < bonusRewards.Length; i++)
+        if (!IsValidReward(selectedIndex))
+            return;
+
+        BonusReward reward = bonusRewards[selectedIndex];
+
+        // Everything was already hidden by HideAllStageCards().
+        // Only turn the SELECTED reward ON, so shared objects always stay on.
+        if (reward.victoryChestCard != null)
+            ActivateWithParents(reward.victoryChestCard);
+
+        if (reward.tapToClaimButton != null)
         {
-            if (!IsValidReward(i))
-                continue;
-
-            BonusReward reward = bonusRewards[i];
-            bool selected = i == selectedIndex;
-
-            if (reward.victoryChestCard != null)
-                reward.victoryChestCard.SetActive(selected);
-
-            if (reward.tapToClaimButton != null)
-                reward.tapToClaimButton.gameObject.SetActive(selected);
+            ActivateWithParents(reward.tapToClaimButton.gameObject);
+            SelectButton(reward.tapToClaimButton, victoryChest);
         }
-        if (IsValidReward(selectedIndex))
+        else
         {
-            SelectButton(bonusRewards[selectedIndex].tapToClaimButton);
+            Debug.LogWarning(
+                "BonusRewardManager: Element " + selectedIndex +
+                " has no Tap To Claim Button.");
         }
     }
 
@@ -293,48 +429,42 @@ public class BonusRewardManager : MonoBehaviour
             !IsValidReward(index))
             return;
 
-        // Close Victory Chest.
-        if (victoryChest != null)
-            victoryChest.SetActive(false);
-
+        // 1) Hide every card / button first.
         HideAllStageCards();
 
-        // Open Got Reward with the same selected reward.
-        if (gotReward != null)
-            gotReward.SetActive(true);
+        // 2) Show Got Reward BEFORE hiding the Victory Chest.
+        ActivateWithParents(gotReward);
+        HidePanelSafely(victoryChest, gotReward);
 
+        // 3) Show only the selected reward's Got Reward card.
         ShowGotRewardCard(index);
     }
 
 
     private void ShowGotRewardCard(int selectedIndex)
     {
-        for (int i = 0; i < bonusRewards.Length; i++)
+        if (!IsValidReward(selectedIndex))
+            return;
+
+        BonusReward reward = bonusRewards[selectedIndex];
+
+        if (reward.gotRewardCard != null)
+            ActivateWithParents(reward.gotRewardCard);
+
+        if (reward.doneButton != null)
         {
-            if (!IsValidReward(i))
-                continue;
+            // Also turns on the done_bg parent if the button sits inside it.
+            ActivateWithParents(reward.doneButton.gameObject);
+            reward.doneButton.interactable = true;
 
-            BonusReward reward = bonusRewards[i];
-            bool selected = i == selectedIndex;
-
-            if (reward.gotRewardCard != null)
-                reward.gotRewardCard.SetActive(selected);
-
-            if (reward.doneButton != null)
-            {
-                Transform doneButtonTransform = reward.doneButton.transform;
-
-                // Activate the done_bg parent if it is the direct parent.
-                if (doneButtonTransform.parent != null)
-                    doneButtonTransform.parent.gameObject.SetActive(selected);
-
-                reward.doneButton.gameObject.SetActive(selected);
-                reward.doneButton.interactable = selected;
-            }
+            SelectButton(reward.doneButton, gotReward);
         }
-
-        if (IsValidReward(selectedIndex))
-            SelectButton(bonusRewards[selectedIndex].doneButton);
+        else
+        {
+            Debug.LogWarning(
+                "BonusRewardManager: Element " + selectedIndex +
+                " has no Done Button.");
+        }
     }
 
 
@@ -404,16 +534,13 @@ public class BonusRewardManager : MonoBehaviour
 
     private void FinishRewardFlow()
     {
-        if (victoryChest != null)
-            victoryChest.SetActive(false);
-
-        if (gotReward != null)
-            gotReward.SetActive(false);
-
         HideAllStageCards();
 
-        if (rewardStore != null)
-            rewardStore.SetActive(true);
+        // Show the Reward Store BEFORE hiding the other panels.
+        ActivateWithParents(rewardStore);
+
+        HidePanelSafely(victoryChest, rewardStore);
+        HidePanelSafely(gotReward, rewardStore);
 
         selectedRewardIndex = -1;
         rewardClaimInProgress = false;
@@ -481,8 +608,12 @@ public class BonusRewardManager : MonoBehaviour
 
         SetRewardState(reward, true, false, false, true);
 
-        reward.messageCoroutine =
-            StartCoroutine(HideCompleteLevelMessage(index));
+        // A coroutine can only start while this object is active.
+        if (isActiveAndEnabled)
+        {
+            reward.messageCoroutine =
+                StartCoroutine(HideCompleteLevelMessage(index));
+        }
     }
 
 
@@ -531,6 +662,17 @@ public class BonusRewardManager : MonoBehaviour
 
     public void RewardClose()
     {
+        // Reset the flow so the reward buttons keep working next time,
+        // even if the store was closed in the middle of a claim.
+        selectedRewardIndex = -1;
+        rewardClaimInProgress = false;
+
+        if (selectButtonCoroutine != null)
+        {
+            StopCoroutine(selectButtonCoroutine);
+            selectButtonCoroutine = null;
+        }
+
         if (parentRewardStore != null)
             parentRewardStore.SetActive(false);
 
@@ -569,7 +711,55 @@ public class BonusRewardManager : MonoBehaviour
     }
 
 
-    private void SelectButton(Button button)
+    // ---------------- BUTTON SELECTION / HIGHLIGHT ----------------
+
+    // Selects a button so the highlighter shows on it.
+    // The selection is done a frame AFTER the panel is switched on, because:
+    //  - a ButtonHighlighter on the panel runs its OnEnable (and may select its
+    //    own default button) in the same frame the panel is activated;
+    //  - the button was only just activated, so the EventSystem and the
+    //    highlighter have not seen it yet.
+    // 'panel' is the panel the button lives in (Victory Chest / Got Reward).
+    private void SelectButton(Button button, GameObject panel)
+    {
+        if (button == null)
+            return;
+
+        if (!isActiveAndEnabled)
+        {
+            SelectButtonNow(button, panel);
+            return;
+        }
+
+        if (selectButtonCoroutine != null)
+            StopCoroutine(selectButtonCoroutine);
+
+        selectButtonCoroutine =
+            StartCoroutine(SelectButtonNextFrame(button, panel));
+    }
+
+    private IEnumerator SelectButtonNextFrame(Button button, GameObject panel)
+    {
+        // Let every OnEnable / Start on the freshly activated panel run first.
+        yield return null;
+
+        SelectButtonNow(button, panel);
+
+        // Make sure nothing stole the selection (e.g. a default-button script).
+        yield return null;
+
+        if (button != null &&
+            button.gameObject.activeInHierarchy &&
+            EventSystem.current != null &&
+            EventSystem.current.currentSelectedGameObject != button.gameObject)
+        {
+            SelectButtonNow(button, panel);
+        }
+
+        selectButtonCoroutine = null;
+    }
+
+    private void SelectButtonNow(Button button, GameObject panel)
     {
         if (button == null || !button.gameObject.activeInHierarchy)
             return;
@@ -585,32 +775,35 @@ public class BonusRewardManager : MonoBehaviour
             return;
         }
 
+        EnsureHighlighter(button, panel);
+
         eventSystem.SetSelectedGameObject(null);
         eventSystem.SetSelectedGameObject(button.gameObject);
     }
 
-    //public bool HasAvailableReward()
-    //{
-    //    if (bonusRewards == null)
-    //        return false;
+    // The highlight is drawn by a ButtonHighlighter. If the panel the button
+    // sits in has no active one (for example the only highlighter lives on the
+    // Reward Store panel, which is hidden at this point), nothing would show.
+    // This makes sure one exists and is running.
+    private void EnsureHighlighter(Button button, GameObject panel)
+    {
+        ButtonHighlighter existing =
+            button.GetComponentInParent<ButtonHighlighter>();
 
-    //    for (int i = 0; i < bonusRewards.Length; i++)
-    //    {
-    //        if (!IsValidReward(i))
-    //            continue;
+        if (existing != null)
+        {
+            if (!existing.enabled)
+                existing.enabled = true;
 
-    //        BonusReward reward = bonusRewards[i];
+            return;
+        }
 
-    //        if (!IsRewardClaimed(i) &&
-    //            IsRequiredLevelCompleted(reward))
-    //        {
-    //            return true;
-    //        }
-    //    }
+        GameObject host =
+            panel != null ? panel : button.transform.parent.gameObject;
 
-    //    return false;
-    //}
-
+        if (host != null && host.GetComponent<ButtonHighlighter>() == null)
+            host.AddComponent<ButtonHighlighter>();
+    }
 
     public bool HasAvailableRewardForLevel(int completedLevelIndex)
     {
@@ -687,16 +880,6 @@ public class BonusRewardManager : MonoBehaviour
 
         RefreshAllRewards();
     }
-
-
-    //public bool TryOpenAvailableRewardFromHome()
-    //{
-    //    //if (!HasAvailableReward())
-    //    //    return false;
-
-    //    OpenRewardStoreFromHome();
-    //    return true;
-    //}
 
     private string GetRewardClaimKey(BonusReward reward)
     {

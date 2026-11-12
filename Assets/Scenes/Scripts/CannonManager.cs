@@ -57,6 +57,9 @@ public class CannonManager : MonoBehaviour
     [Tooltip("Assign the in-game Pause button. It is hidden on Android TV / Fire TV and shown on mobile / tablet.")]
     [SerializeField] private GameObject pauseButtonGameObject;
 
+    [Tooltip("Optional remote UI/GameObject. It is shown only in the Game_Lobby scene on Android TV / Fire TV.")]
+    [SerializeField] private GameObject remoteGameObject;
+
     [Header("Result Coin Text")]
     [Tooltip("Assign the TMP text that displays the reward on the Level Pass panel.")]
     [SerializeField] private TMP_Text levelPassCoinText;
@@ -96,6 +99,9 @@ public class CannonManager : MonoBehaviour
     private bool tutorialResultShowing;
     private bool isPaused;
     private float bufferedInputTimer;
+
+    // Prevent the TV remote's Resume/Submit press from also launching the player.
+    private bool blockLaunchInputUntilReleased;
 
     // True once the player exists and the first cannon has been entered.
     private bool levelStarted;
@@ -137,16 +143,34 @@ public class CannonManager : MonoBehaviour
 
     private void ApplyPlatformUI()
     {
-        if (pauseButtonGameObject == null)
-            return;
+        string currentSceneName = SceneManager.GetActiveScene().name;
 
         bool isTV = AndroidTV.IsAndroidOrFireTv();
+        bool isTutorial = currentSceneName == "Tutorial";
+        bool isGameLobby = currentSceneName == "Game_Lobby";
 
-        // Hide the Pause button on Android TV / Fire TV.
-        // Keep it visible on mobile and tablet.
-        pauseButtonGameObject.SetActive(!isTV);
+        // Pause button: hide on TV / Fire TV, Tutorial, and Game_Lobby.
+        // Show it only in other scenes on mobile / tablet.
+        if (pauseButtonGameObject != null)
+            pauseButtonGameObject.SetActive(!isTV && !isTutorial && !isGameLobby);
+
+        // Remote: show only in Game_Lobby on Android TV / Fire TV.
+        // This reference is optional, so scenes without a remote are safe.
+        if (remoteGameObject != null)
+            remoteGameObject.SetActive(isTV && isGameLobby);
     }
 
+    // Returns true when the active scene is the Tutorial gameplay scene.
+    private bool IsTutorialScene()
+    {
+        return SceneManager.GetActiveScene().name == "Tutorial";
+    }
+
+    // Returns true when the active scene is the Game Lobby.
+    private bool IsGameLobbyScene()
+    {
+        return SceneManager.GetActiveScene().name == "Game_Lobby";
+    }
     private void ApplyFrameRate()
     {
         if (targetFrameRate <= 0)
@@ -337,7 +361,10 @@ public class CannonManager : MonoBehaviour
     {
         // Escape / Android Back toggles pause. Handled first so it still
         // works while paused (Update keeps running at timeScale 0).
-        if (escapeTogglesPause && Input.GetKeyDown(KeyCode.Escape))
+        if (escapeTogglesPause &&
+            !IsTutorialScene() &&
+            !IsGameLobbyScene() &&
+            Input.GetKeyDown(KeyCode.Escape))
         {
             if (isPaused)
                 ResumeButton();
@@ -349,6 +376,17 @@ public class CannonManager : MonoBehaviour
 
         if (levelFinished || isPaused || player == null || !levelStarted)
             return;
+
+        // A TV remote commonly uses the same Submit button for Resume and
+        // gameplay. Do not accept another launch until that button is released.
+        if (blockLaunchInputUntilReleased)
+        {
+            if (!IsLaunchInputHeld())
+                blockLaunchInputUntilReleased = false;
+
+            bufferedInputTimer = 0f;
+            return;
+        }
 
         bool pressed = ReadPressed();
 
@@ -374,6 +412,21 @@ public class CannonManager : MonoBehaviour
                 LaunchCurrentCannon();
             }
         }
+    }
+
+    private bool IsLaunchInputHeld()
+    {
+        if (Input.GetKey(KeyCode.Space) ||
+            Input.GetKey(KeyCode.Return) ||
+            Input.GetKey(KeyCode.KeypadEnter) ||
+            Input.GetKey(KeyCode.JoystickButton0) ||
+            Input.GetMouseButton(0))
+        {
+            return true;
+        }
+
+        // Keep the lock active while a touch is still down.
+        return Input.touchCount > 0;
     }
 
     private bool ReadPressed()
@@ -755,9 +808,12 @@ public class CannonManager : MonoBehaviour
         if (resultPanelDelay > 0f)
             yield return new WaitForSecondsRealtime(resultPanelDelay);
 
-        // Tutorial levels always use the Tutorial Complete screen,
-        // including when the player misses a cannon / fails the tutorial.
-        if (PlayerPrefs.GetInt("IsInteractableLevel", 0) == 1)
+        // Game_Lobby always uses the Tutorial Completed screen,
+        // whether the player passes or fails. Interactable tutorial levels
+        // continue to use the same result screen as before.
+        bool isGameLobby = SceneManager.GetActiveScene().name == "Game_Lobby";
+
+        if (isGameLobby || PlayerPrefs.GetInt("IsInteractableLevel", 0) == 1)
         {
             yield return StartCoroutine(ShowTutorialResult());
             yield break;
@@ -827,12 +883,29 @@ public class CannonManager : MonoBehaviour
     // TUTORIAL COMPLETION
     // =========================================================
 
+    // Saves tutorial completion + the pending interactable reward immediately,
+    // so it can't be lost if the player leaves the scene early (e.g. taps Home
+    // before the tutorial result timer finishes).
+    private void MarkTutorialCompleted()
+    {
+        PlayerPrefs.SetInt("TutorialCompleted", 1);
+
+        if (PlayerPrefs.GetInt("InteractableRewardClaimed", 0) == 0)
+            PlayerPrefs.SetInt("ShowInteractableRewardOnMenuReturn", 1);
+
+        PlayerPrefs.SetInt("IsInteractableLevel", 0);
+        PlayerPrefs.Save();
+    }
+
     private IEnumerator ShowTutorialResult()
     {
         if (tutorialResultShowing)
             yield break;
 
         tutorialResultShowing = true;
+
+        // Saved immediately, not after the wait below.
+        MarkTutorialCompleted();
 
         Time.timeScale = 1f;
 
@@ -865,18 +938,12 @@ public class CannonManager : MonoBehaviour
 
         yield return new WaitForSecondsRealtime(tutorialResultDuration);
 
-        PlayerPrefs.SetInt("TutorialCompleted", 1);
-
-        if (PlayerPrefs.GetInt("InteractableRewardClaimed", 0) == 0)
-        {
-            PlayerPrefs.SetInt("ShowInteractableRewardOnMenuReturn", 1);
-        }
-
-        PlayerPrefs.SetInt("IsInteractableLevel", 0);
-
-        PlayerPrefs.Save();
-
         Time.timeScale = 1f;
+
+        // Game_Lobby stays on the tutorial completion screen until Home is
+        // clicked. Other interactable tutorial scenes keep their old flow.
+        if (SceneManager.GetActiveScene().name == "Game_Lobby")
+            yield break;
 
         SceneManager.LoadScene(0);
     }
@@ -1005,16 +1072,19 @@ public class CannonManager : MonoBehaviour
     // The gameplay level is hidden while the pause panel is displayed.
     public void PauseGame()
     {
+        // Do not allow pausing in Tutorial or Game_Lobby, even if this
+        // method is called directly by another script or a UI event.
+        if (IsTutorialScene() || IsGameLobbyScene())
+            return;
+
         if (levelFinished || tutorialResultShowing || isPaused)
             return;
 
         isPaused = true;
         bufferedInputTimer = 0f;
 
-        if (levelGameObject != null)
-            levelGameObject.SetActive(false);
-        else
-            Debug.LogWarning("CannonManager: Level GameObject is not assigned.");
+        // Keep gameplay objects active. Time.timeScale pauses scaled gameplay
+        // without firing OnDisable/OnEnable on cannons and player components.
 
         if (pausePanel != null)
             pausePanel.SetActive(true);
@@ -1032,9 +1102,10 @@ public class CannonManager : MonoBehaviour
 
         if (!levelFinished && !tutorialResultShowing)
         {
-            if (levelGameObject != null)
-                levelGameObject.SetActive(true);
-
+            // Require the Resume/Submit control to be released before gameplay
+            // input is accepted again. This prevents an accidental cannon shot.
+            bufferedInputTimer = 0f;
+            blockLaunchInputUntilReleased = true;
             isPaused = false;
         }
 
@@ -1167,12 +1238,11 @@ public class CannonManager : MonoBehaviour
     {
         Time.timeScale = 1f;
 
-        PlayerPrefs.SetInt("TutorialCompleted", 1);
-        PlayerPrefs.SetInt("IsInteractableLevel", 0);
+        // Guarantees the tutorial-complete flag and the pending interactable
+        // reward are saved even if Home is tapped before the result timer ends.
+        MarkTutorialCompleted();
 
-        PlayerPrefs.Save();
-
-        SceneManager.LoadScene(0);
+        SceneManager.LoadScene("UI");
     }
 
 

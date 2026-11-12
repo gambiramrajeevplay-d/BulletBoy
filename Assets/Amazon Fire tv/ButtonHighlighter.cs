@@ -10,7 +10,7 @@ using UnityEngine.UI;
 public class ButtonHighlighter : MonoBehaviour
 {
     private Button previousButton;
-    [SerializeField] private float scaleAmount = 1.1f;
+    [SerializeField] private float scaleAmount = 1f;
     public GameObject defaultButton;
     public GameObject singleplaybtn;
 
@@ -43,6 +43,12 @@ public class ButtonHighlighter : MonoBehaviour
 
     private void OnEnable()
     {
+        // Clear any stale reference (e.g. a button from a panel that was closed)
+        // so the next selection is always treated as a change.
+        if (previousButton != null)
+            UnHighlightButton(previousButton);
+        previousButton = null;
+
         if (EventSystem.current == null)
             return;
 
@@ -207,5 +213,23 @@ public class ButtonHighlighter : MonoBehaviour
 
         EventSystem.current.SetSelectedGameObject(null);
         EventSystem.current.SetSelectedGameObject(levels[index].gameObject);
+    }
+
+    public void BuyFullHigh()
+    {
+        int currentIndex = PlayerPrefs.GetInt(HighlighterKey, 0);
+
+        if (EventSystem.current == null)
+            return;
+
+        if (levels == null || levels.Length == 0)
+            return;
+
+        currentIndex = Mathf.Clamp(currentIndex, 0, levels.Length - 1);
+
+        if (levels[currentIndex] != null)
+        {
+            EventSystem.current.SetSelectedGameObject(levels[currentIndex].gameObject);
+        }
     }
 }
